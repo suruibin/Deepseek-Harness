@@ -52,8 +52,8 @@ const SURFACE_DARK: Record<string, string> = {
   '--dsw-alias-bg-module-platform': 'rgb(39, 46, 62)', // appearance selected cube, badges
   '--dsw-specific-menu': 'rgb(39, 46, 62)', // dropdown menus
   '--dsw-alias-tooltip-bg': 'rgb(46, 54, 73)', // tooltips
-  '--dsw-specific-input-major': 'rgb(32, 38, 52)', // input buttons, image viewer
-  '--dsw-specific-login-input': 'rgb(24, 28, 40)', // login fields
+  '--dsw-specific-input-major': 'rgb(58, 68, 90)', // input buttons, image viewer (brighter)
+  '--dsw-specific-login-input': 'rgb(52, 62, 84)', // login fields (brighter)
   '--dsw-alias-button-elevated-fill': 'rgb(32, 38, 52)', // "new session" button, rename input
   '--dsw-alias-button-floating-hover': 'rgb(39, 46, 62)', // its hover state
   '--dsw-alias-button-floating-fill': 'rgb(32, 38, 52)', // scroll-to-bottom, drawer handle
@@ -596,19 +596,30 @@ export function ambientStyleScript(): string {
       })
     }
 
-    // Every 5s pick fresh whale + gradient colors and repaint whichever
+    // Every 10s pick fresh whale + gradient colors and repaint whichever
     // brand surface is visible. Timestamp guard dedupes the 1s heartbeat.
     let lastBrandColorChange = 0
     const cycleBrandColors = () => {
       const now = Date.now()
-      if (now - lastBrandColorChange < 5000) return
+      if (now - lastBrandColorChange < 10000) return
       lastBrandColorChange = now
       whaleColor = whaleColors[Math.floor(Math.random() * whaleColors.length)]
       gradColors = gradPalettes[Math.floor(Math.random() * gradPalettes.length)]
       applyLogo()
       applyRailFish()
     }
+    // Sidebar collapse/expand forces an immediate color change too, so the
+    // brand visibly refreshes whenever the rail state toggles.
+    const forceBrandColorChange = () => {
+      lastBrandColorChange = Date.now()
+      whaleColor = whaleColors[Math.floor(Math.random() * whaleColors.length)]
+      gradColors = gradPalettes[Math.floor(Math.random() * gradPalettes.length)]
+      applyLogo()
+      applyRailFish()
+    }
     setInterval(cycleBrandColors, 1000)
+    // Tracks the previous sidebar rail state so toggles are detected once.
+    let lastRailPresent = document.querySelector('[class*="_railFish"]') !== null
 
     // Empty-state hero: pick one idle motion variant at random per launch.
     const applyHero = () => {
@@ -644,6 +655,13 @@ export function ambientStyleScript(): string {
         ensureLogoStructure()
         lastAppliedGrad = ''
         applyLogo()
+      }
+      // Collapse/expand flips between brand (open) and rail fish (closed);
+      // each toggle forces an immediate brand color change.
+      const railPresent = document.querySelector('[class*="_railFish"]') !== null
+      if (railPresent !== lastRailPresent) {
+        lastRailPresent = railPresent
+        forceBrandColorChange()
       }
       if (obsScheduled) return
       obsScheduled = true
