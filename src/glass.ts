@@ -520,41 +520,58 @@ export function ambientStyleScript(): string {
 
     // One-time structural setup: inject the linearGradient and point letter
     // paths at it. Gradient stops are repainted on each cycle.
-    const applyLogoStructure = () => {
-      const svg = document.querySelector('[class*=\"_brand\"] svg')
+    // Ensure the brand SVG has its gradient infrastructure. The SPA rebuilds
+    // the sidebar SVG on collapse/expand, dropping our injected <defs> and
+    // reverting letter fills to currentColor - that is why the wordmark
+    // flickers away for a frame. Rebuild promptly whenever the structure is
+    // missing, even if the dataset flag still says done.
+    const ensureLogoStructure = () => {
+      const svg = document.querySelector('[class*="_brand"] svg')
       if (svg === null) return
-      if (svg.dataset.dshLogoDone === '1') return
-      svg.dataset.dshLogoDone = '1'
       const NS = 'http://www.w3.org/2000/svg'
       const gradId = 'dsh-logo-grad'
+      const grad = svg.querySelector('linearGradient[id="' + gradId + '"]')
+      if (grad !== null) {
+        // Gradient survives, but the re-render may have reset letter fills
+        // back to currentColor; repoint them regardless.
+        svg.querySelectorAll('path[fill="currentColor"]').forEach((p) => {
+          p.setAttribute('fill', 'url(#' + gradId + ')')
+        })
+        return
+      }
       const defs = document.createElementNS(NS, 'defs')
-      const grad = document.createElementNS(NS, 'linearGradient')
-      grad.id = gradId
-      grad.setAttribute('x1', '0')
-      grad.setAttribute('y1', '0')
-      grad.setAttribute('x2', '1')
-      grad.setAttribute('y2', '0')
-      defs.appendChild(grad)
+      const newGrad = document.createElementNS(NS, 'linearGradient')
+      newGrad.id = gradId
+      newGrad.setAttribute('x1', '0')
+      newGrad.setAttribute('y1', '0')
+      newGrad.setAttribute('x2', '1')
+      newGrad.setAttribute('y2', '0')
+      defs.appendChild(newGrad)
       svg.insertBefore(defs, svg.firstChild)
       svg.querySelectorAll('path[fill="currentColor"]').forEach((p) => {
         p.setAttribute('fill', 'url(#' + gradId + ')')
       })
     }
 
+    const applyLogoStructure = ensureLogoStructure
+
     // Repaint the wordmark gradient and whale rect with current colors.
     const applyLogo = () => {
       const svg = document.querySelector('[class*="_brand"] svg')
       if (svg === null) return
-      const gradKey = gradColors.join('|')
-      if (gradKey === lastAppliedGrad && whaleColor === lastAppliedWhale) return
       const NS = 'http://www.w3.org/2000/svg'
       let grad = svg.querySelector('linearGradient[id="dsh-logo-grad"]')
       if (grad === null) {
-        delete svg.dataset.dshLogoDone
-        applyLogoStructure()
+        // Structure was dropped by a sidebar re-render: rebuild it and force
+        // a repaint by clearing the applied-color cache (the new gradient
+        // starts with no stops, so an early return would leave it empty).
+        lastAppliedGrad = ''
+        ensureLogoStructure()
         grad = svg.querySelector('linearGradient[id="dsh-logo-grad"]')
         if (grad === null) return
       }
+      const gradKey = gradColors.join('|')
+      if (gradKey === lastAppliedGrad && whaleColor === lastAppliedWhale && grad.firstChild !== null) return
       while (grad.firstChild !== null) grad.removeChild(grad.firstChild)
       gradColors.forEach((c, i) => {
         const stop = document.createElementNS(NS, 'stop')
@@ -619,6 +636,15 @@ export function ambientStyleScript(): string {
       applyHero()
     }
     const obs = new MutationObserver(() => {
+      // Brand (re)appearance is time-critical: rebuild its gradient structure
+      // synchronously so collapse/expand never leaves the wordmark invisible
+      // for even one frame. Everything else stays rAF-throttled.
+      const brandSvg = document.querySelector('[class*="_brand"] svg')
+      if (brandSvg !== null && brandSvg.querySelector('linearGradient[id="dsh-logo-grad"]') === null) {
+        ensureLogoStructure()
+        lastAppliedGrad = ''
+        applyLogo()
+      }
       if (obsScheduled) return
       obsScheduled = true
       requestAnimationFrame(obsTick)
