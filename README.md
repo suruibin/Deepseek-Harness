@@ -16,7 +16,7 @@ It is a **shell only**. It bundles no Node runtime and no harness closure — it
 
 | | |
 |---|---|
-| **Window** | Sandboxed renderer (`sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, no preload) — the GUI is a normal web application |
+| **Window** | Sandboxed renderer (`sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`; preload exposes only the IPC bridge the opacity slider needs) — the GUI is a normal web application |
 | **Tray residency** | Closing the window hides it; the server keeps running. Only **Quit** terminates the server |
 | **Single instance** | A second launch focuses the existing window instead of starting a second server |
 | **No orphans** | Quit tree-kills the server; a reaper child also tree-kills it if the main process is ever hard-killed |
@@ -55,6 +55,16 @@ Installers are unsigned, so Windows SmartScreen and macOS Gatekeeper will warn o
 - **External links.** Anything that opens a new window or navigates off the server origin goes to the system browser, restricted to `http(s)`; unparsable targets are dropped.
 - **Workspace semantics** are the CLI's: the invoking directory is the default project root. Launching from a desktop shortcut starts in the shell's cwd, so prefer opening the app from a project directory or picking the Workspace in the GUI.
 - **Logs.** The server's stdout is forwarded with a `[dsh web]` prefix; run the app from a terminal to see both streams.
+
+## Customizations
+
+Local changes on top of the upstream shell:
+
+- **DeepSeek blue theme**: floating surfaces — dialogs, dropdown menus, tooltips, inputs, buttons (including "new session"), the Appearance selection and plugin-config cards — switch from the theme's neutral grays to DeepSeek brand blue (a deep-blue glass family), matching the window glass tint. Implemented by injecting CSS custom properties into the hosted page (`src/glass.ts`), with separate palettes for dark and light.
+- **Background-opacity slider**: a new "背景透明度 / Background opacity" slider below the Appearance row (Settings → General → Appearance), 40%–100%, applied live and persisted. The title follows the page locale. It talks to the main process through the new sandboxed preload (`src/preload.cts`) over IPC.
+- **Trimmed tray menu**: the Opacity and Theme entries were removed from the tray context menu (Open Window / Quit only); theme and opacity are managed from the settings page.
+- **Icons**: the window and tray icons are rendered in DeepSeek brand blue (`#4176e6`); `scripts/generate-icons.mjs` honors a `DSH_FAVICON` override for the favicon source and no longer forces the icon white under dark mode.
+- **Fix**: live opacity/theme adjustments from the tray did not apply — repeated glass-guard injections stacked MutationObservers that overwrote each other's values; each injection now disconnects the previous observer first, so adjustments take effect immediately.
 
 ## Tests
 

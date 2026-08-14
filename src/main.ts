@@ -9,7 +9,8 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import { killProcessTree } from './process-tree.ts'
-import { app, BrowserWindow, dialog, Menu, nativeImage, shell, Tray } from './electron-api.ts'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from './electron-api.ts'
+import { alphaControlScript, glassGuardScript, glassWindowOptions, loadGlassSettings, saveGlassSettings, themeScript, type GlassTheme } from './glass.ts'
 import { resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
 
 const APP_ID = 'ai.deepseek.dsh-desktop'
@@ -36,6 +37,11 @@ let failing = false
 // A focus request (second launch, tray click) that arrived while the server
 // was still booting and no window existed yet; honored once boot completes.
 let pendingFocus = false
+// Glass styling state: the current Linux tint alpha and theme preference.
+const userData = app.getPath('userData')
+const initialGlass = loadGlassSettings(userData)
+let windowAlpha = initialGlass.alpha
+let windowTheme: GlassTheme = initialGlass.theme
 
 function iconPath(): string {
   return join(PACKAGE_DIR, 'build', 'icon.png')
@@ -59,6 +65,68 @@ function killTree(pid: number): Promise<void> {
   return killProcessTree(pid, {
     logger: (message) => { console.error(`[dsh-desktop] killTree ${message}`) },
   })
+}
+
+/**
+ * (Re)inject the glass styling into the hosted page. The previous injection is
+ * removed first so repeated calls replace instead of stacking rules; a stale
+ * key after navigation is swallowed. Errors are non-fatal: the page simply
+ * keeps its previous styling and the next load re-injects.
+ * @param window - the window whose page carries the glass tint.
+ * @param alpha - the Linux tint opacity (ignored on Windows/macOS).
+ */
+/**
+ * Force the hosted page's theme to the preference. Runs before the glass guard
+ * is installed so the tint color matches the theme that will be visible.
+ * @param window - the window whose page carries the theme.
+ */
+async function applyGlassTheme(window: BrowserWindow, theme: GlassTheme): Promise<void> {
+  try {
+    await window.webContents.executeJavaScript(themeScript(theme))
+  } catch {
+    // Page not ready; the next did-finish-load re-applies it.
+  }
+}
+
+/**
+ * (Re)apply the full glass styling to a window: force the theme first, then
+ * install the self-healing tint guard (which keys off the theme attribute).
+ * @param window - the window to restyle.
+ */
+async function applyGlass(window: BrowserWindow): Promise<void> {
+  await applyGlassTheme(window, windowTheme)
+  try {
+    await window.webContents.executeJavaScript(glassGuardScript(windowAlpha))
+  } catch {
+    // Page not ready; the next did-finish-load re-applies it.
+  }
+}
+
+/**
+ * Inject the background-opacity slider into the hosted settings page. The
+ * script mounts itself below the Appearance row (通用设置 → 外观) whenever
+ * that panel renders; values travel to the main process through the preload
+ * bridge. Errors are non-fatal: the next did-finish-load re-injects.
+ * @param window - the window hosting the settings page.
+ */
+async function injectAlphaControl(window: BrowserWindow): Promise<void> {
+  try {
+    await window.webContents.executeJavaScript(alphaControlScript())
+  } catch {
+    // Settings panel not ready; the next did-finish-load re-injects.
+  }
+}
+
+/**
+ * Change the window's glass tint and persist the choice. Driven by the
+ * settings-page slider (via the `dsh:set-alpha` IPC) and by the tray menu.
+ * @param alpha - the new tint opacity in [0, 1].
+ */
+function setWindowAlpha(alpha: number): void {
+  if (alpha === windowAlpha) return
+  windowAlpha = alpha
+  saveGlassSettings(userData, { alpha, theme: windowTheme })
+  if (mainWindow !== undefined) void applyGlass(mainWindow)
 }
 
 function showWindow(): void {
@@ -100,6 +168,7 @@ function openExternal(raw: string): void {
 
 function createWindow(url: URL): void {
   const window = new BrowserWindow({
+    ...glassWindowOptions(process.platform),
     width: 1280,
     height: 800,
     minWidth: 940,
@@ -112,10 +181,24 @@ function createWindow(url: URL): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: join(PACKAGE_DIR, 'lib', 'preload.cjs'),
     },
   })
   mainWindow = window
   window.once('ready-to-show', () => { window.show() })
+  // The SPA's theme plugin loads asynchronously after the document finishes
+  // and re-applies its own theme attribute, clobbering an eager injection.
+  // Debounce the glass application until the page has settled.
+  let glassTimer: NodeJS.Timeout | undefined
+  const scheduleGlass = (): void => {
+    if (glassTimer !== undefined) clearTimeout(glassTimer)
+    glassTimer = setTimeout(() => {
+      void applyGlass(window)
+      void injectAlphaControl(window)
+    }, 800)
+  }
+  window.webContents.on('did-finish-load', scheduleGlass)
+  window.webContents.on('did-navigate', scheduleGlass)
   void window.loadURL(url.href).catch((error: unknown) => {
     // The server may have died right after readiness; a failed load must
     // not crash the main process, the window just stays on its error page.
@@ -146,16 +229,25 @@ function createWindow(url: URL): void {
   })
 }
 
+/**
+ * Build the tray context menu. Glass opacity and page theme are controlled
+ * from the hosted settings page (通用设置 → 外观), so the tray only carries
+ * the window and quit actions.
+ */
+function buildTrayMenu(): Menu {
+  return Menu.buildFromTemplate([
+    { label: 'Open Window', click: showWindow },
+    { type: 'separator' },
+    { label: 'Quit', click: () => { app.quit() } },
+  ])
+}
+
 function createTray(): void {
   const image = nativeImage.createFromPath(trayIconPath())
   const icon = image.isEmpty() ? nativeImage.createEmpty() : image.resize({ width: 16, height: 16 })
   tray = new Tray(icon)
   tray.setToolTip(WINDOW_TITLE)
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open Window', click: showWindow },
-    { type: 'separator' },
-    { label: 'Quit', click: () => { app.quit() } },
-  ]))
+  tray.setContextMenu(buildTrayMenu())
   tray.on('click', showWindow)
 }
 
@@ -335,6 +427,12 @@ if (!app.requestSingleInstanceLock()) {
     showWindow()
   })
   app.setAppUserModelId(APP_ID)
+  // Glass IPC for the settings-page opacity slider (preload bridge). The
+  // value is validated here because the renderer side is hostile surface.
+  ipcMain.on('dsh:set-alpha', (_event, alpha: unknown) => {
+    if (typeof alpha === 'number' && Number.isFinite(alpha)) setWindowAlpha(alpha)
+  })
+  ipcMain.handle('dsh:get-alpha', () => windowAlpha)
   app.whenReady().then(boot).catch(fatal)
   app.on('before-quit', (event) => {
     // More than one path can request quit. Keep the first tree-kill as the
