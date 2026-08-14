@@ -303,15 +303,26 @@ export function alphaControlScript(): string {
         control.innerHTML =
           '<div style="color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px"></div>' +
           '<div style="display:flex;align-items:center;gap:12px">' +
-            '<input type="range" min="0.4" max="1" step="0.05" style="flex:1;accent-color:#4176e6;cursor:pointer">' +
+            '<input type="range" min="0.4" max="1" step="0.05" style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-alpha-fill,40%),rgba(65,118,230,0.22) var(--dsh-alpha-fill,40%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
             '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;min-width:44px;text-align:right"></span>' +
-          '</div>'
+          '</div>' +
+          '<style>' +
+            '[data-dsh-glass-alpha] input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid #4176e6;box-shadow:0 1px 4px rgba(15,20,35,0.35),0 0 0 3px rgba(65,118,230,0.18);transition:box-shadow 0.15s ease,transform 0.15s ease;cursor:pointer}' +
+            '[data-dsh-glass-alpha] input[type=range]:hover::-webkit-slider-thumb{box-shadow:0 1px 6px rgba(15,20,35,0.4),0 0 0 5px rgba(65,118,230,0.22)}' +
+            '[data-dsh-glass-alpha] input[type=range]:active::-webkit-slider-thumb{transform:scale(1.1)}' +
+            '[data-dsh-glass-alpha] input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #4176e6;box-shadow:0 1px 4px rgba(15,20,35,0.35);cursor:pointer}' +
+            '[data-dsh-glass-alpha] input[type=range]::-moz-range-track{height:6px;border-radius:999px;background:linear-gradient(90deg,#4176e6 var(--dsh-alpha-fill,40%),rgba(65,118,230,0.22) var(--dsh-alpha-fill,40%))}' +
+          '</style>'
         const titleEl = control.firstElementChild
         if (titleEl !== null) titleEl.textContent = title
         const input = control.querySelector('input')
         const label = control.querySelector('span')
         if (input === null || label === null) return
-        const render = (value) => { label.textContent = Math.round(value * 100) + '%' }
+        const render = (value) => {
+          label.textContent = Math.round(value * 100) + '%'
+          const pct = ((value - 0.4) / (1 - 0.4)) * 100
+          input.style.setProperty('--dsh-alpha-fill', pct.toFixed(1) + '%')
+        }
         let raf = 0
         input.addEventListener('input', () => {
           const value = Number(input.value)
@@ -337,5 +348,287 @@ export function alphaControlScript(): string {
     // childList: row (re)mounts; characterData: locale switches swap text in
     // place, which must re-sync the mounted control's title.
     obs.observe(document.body, { childList: true, subtree: true, characterData: true })
+  })()`
+}
+
+
+/**
+ * Ambient texture + UI chrome injection for the hosted page. Everything here
+ * is independent of the window frame: film grain + brand glow over the whole
+ * canvas, slim glass scrollbars, a floating rounded sidebar card, a compact
+ * rounded details panel, a translucent icon-only new-session button, an
+ * enlarged living brand (wordmark gradient + whale color cycling every 5s)
+ * and a slow randomized entrance for the empty-state hero glow.
+ *
+ * The previous injection is removed first so repeated calls replace instead
+ * of stacking; a self-healing observer re-appends the style node and re-applies
+ * the brand styling when the SPA re-renders.
+ */
+export function ambientStyleScript(): string {
+  return `(() => {
+    const prevStyle = document.querySelector('#dsh-dt-style')
+    if (prevStyle !== null) prevStyle.remove()
+    if (window.__dshDtStyleObserver) {
+      window.__dshDtStyleObserver.disconnect()
+      window.__dshDtStyleObserver = undefined
+    }
+
+    const style = document.createElement('style')
+    style.id = 'dsh-dt-style'
+    style.textContent = [
+      // Ambient texture: faint film grain (mix-blend overlay keeps it subtle)
+      // + a soft brand-blue glow pooling near the top, like light on glass.
+      // Both are static fixed layers — deliberately NO animation, because an
+      // animated full-canvas layer pegs the renderer at ~100% CPU under
+      // software rendering (see hero below).
+      'html::after {',
+      "  content: '';",
+      '  position: fixed; inset: 0;',
+      '  z-index: 2147483001;',
+      '  pointer-events: none;',
+      "  background-image: url(\\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E\\");",
+      '  opacity: 0.025;',
+      '  mix-blend-mode: overlay;',
+      '}',
+      'html::before {',
+      "  content: '';",
+      '  position: fixed; inset: 0;',
+      '  z-index: 2147483000;',
+      '  pointer-events: none;',
+      '  background: radial-gradient(120% 70% at 50% -8%, rgba(65, 118, 230, 0.16), transparent 62%);',
+      '}',
+      // Slim unobtrusive scrollbars that read as part of the glass theme.
+      '*::-webkit-scrollbar { width: 8px; height: 8px; }',
+      '*::-webkit-scrollbar-track { background: transparent; }',
+      '*::-webkit-scrollbar-thumb { background: rgba(128, 132, 142, 0.38); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }',
+      '*::-webkit-scrollbar-thumb:hover { background: rgba(128, 132, 142, 0.62); border: 2px solid transparent; background-clip: content-box; }',
+      '* { scrollbar-width: thin; scrollbar-color: rgba(128, 132, 142, 0.38) transparent; }',
+      // Sidebar as a floating glass card: drop the hard divider, round all
+      // corners, lift it off the canvas with margin and a soft shadow.
+      '[class*=\"_sidebarCol\"] {',
+      '  border-right: none !important;',
+      '  border-radius: 16px !important;',
+      '  margin: 4px 0 8px 8px !important;',
+      '  box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.5);',
+      '}',
+      '[class*=\"_sidebarCol\"] [class*=\"_root\"] {',
+      '  border-radius: 12px !important;',
+      '}',
+      // Details panel (对话 / 轨迹 / Session log): same floating-card look,
+      // compact height so it does not butt against the window top edge.
+      '[class*=\"_detailsCol\"] {',
+      '  border-left: none !important;',
+      '  border-radius: 16px !important;',
+      '  margin: 16px 8px 8px 0 !important;',
+      '  box-shadow: -8px 0 24px -12px rgba(0, 0, 0, 0.35);',
+      '  height: 62% !important;',
+      '  align-self: start !important;',
+      '}',
+      '[class*=\"_detailsCol\"] [class*=\"_header\"] {',
+      '  height: 40px !important;',
+      '}',
+      '[class*=\"_detailsCol\"] [class*=\"_tabs\"] {',
+      '  margin-top: 0 !important;',
+      '}',
+      '[class*=\"_detailsCol\"] [class*=\"_tab\"] {',
+      '  font-size: 12px !important;',
+      '  padding-bottom: 8px !important;',
+      '}',
+      '[class*=\"_detailsCol\"] [class*=\"_root\"] {',
+      '  border-radius: 12px !important;',
+      '}',
+      // New-session button: translucent glass pill, icon only (label hidden),
+      // original rounded-rect shape.
+      '[class*=\"_sidebarCol\"] [class*=\"_newSession\"] {',
+      '  background: rgba(65, 118, 230, 0.12) !important;',
+      '  border: 1px solid rgba(65, 118, 230, 0.4) !important;',
+      '  box-shadow: 0 2px 10px -4px rgba(65, 118, 230, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;',
+      '  height: 30px !important;',
+      '  min-height: 30px !important;',
+      '  padding: 0 12px !important;',
+      '  margin: 0 2px 8px !important;',
+      '  border-radius: 12px !important;',
+      '  transition: box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease !important;',
+      '}',
+      '[class*=\"_sidebarCol\"] [class*=\"_newSessionLabel\"] {',
+      '  display: none !important;',
+      '}',
+      '[class*=\"_sidebarCol\"] [class*=\"_newSession\"]:hover {',
+      '  background: rgba(65, 118, 230, 0.2) !important;',
+      '  border-color: rgba(65, 118, 230, 0.6) !important;',
+      '  box-shadow: 0 4px 14px -4px rgba(65, 118, 230, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;',
+      '}',
+      // Expanded brand: taller logo row (75px) and larger wordmark. The
+      // collapsed rail keeps its compact 36px strip unchanged.
+      '[class*=\"_sidebarCol\"] [class*=\"_root\"]:not([class*=\"_collapsed\"]) [class*=\"_logoRow\"] {',
+      '  height: 75px !important;',
+      '  margin-bottom: 6px !important;',
+      '  padding-top: 6px !important;',
+      '  padding-bottom: 6px !important;',
+      '}',
+      '[class*=\"_sidebarCol\"] [class*=\"_root\"]:not([class*=\"_collapsed\"]) [class*=\"_brand\"] svg {',
+      '  width: 260px !important;',
+      '  height: auto !important;',
+      '}',
+      // Empty-state hero glow: slow entrance + gentle randomized idle motion.
+      '@keyframes dsh-hero-fade-in {',
+      '  from { opacity: 0; transform: translate(-50%, 50%) scale(0.9); }',
+      '  to { opacity: 1; transform: translate(-50%, 50%) scale(1); }',
+      '}',
+      '@keyframes dsh-hero-drift {',
+      '  0%, 100% { transform: translate(-50%, 50%) translateY(0); }',
+      '  50% { transform: translate(-50%, 50%) translateY(-14px); }',
+      '}',
+      '@keyframes dsh-hero-breathe {',
+      '  0%, 100% { transform: translate(-50%, 50%) scale(1); opacity: 0.85; }',
+      '  50% { transform: translate(-50%, 50%) scale(1.06); opacity: 1; }',
+      '}',
+      '@keyframes dsh-hero-sway {',
+      '  0%, 100% { transform: translate(-50%, 50%) rotate(-1.2deg); }',
+      '  50% { transform: translate(-50%, 50%) rotate(1.2deg); }',
+      '}',
+      '[class*=\"_heroGlow\"][data-dsh-hero] {',
+      '  animation: dsh-hero-fade-in 1.6s ease-out both;',
+      '}',
+      '[class*=\"_heroGlow\"][data-dsh-hero=\"drift\"] {',
+      '  animation: dsh-hero-fade-in 1.6s ease-out both;',
+      '}',
+      '[class*=\"_heroGlow\"][data-dsh-hero=\"breathe\"] {',
+      '  animation: dsh-hero-fade-in 1.6s ease-out both;',
+      '}',
+      '[class*=\"_heroGlow\"][data-dsh-hero=\"sway\"] {',
+      '  animation: dsh-hero-fade-in 1.6s ease-out both;',
+      '}',
+      '@media (prefers-reduced-motion: reduce) {',
+      '  [class*=\"_heroGlow\"][data-dsh-hero] { animation: dsh-hero-fade-in 0.8s ease-out both !important; }',
+      '}',
+    ].join('\\n')
+    document.head.appendChild(style)
+
+    // Brand colors: whale accent + gradient palette, cycled every 5s.
+    const whaleColors = ['#4176e6', '#3b82f6', '#06b6d4', '#10b981', '#6366f1', '#0ea5e9', '#7b5cf0', '#f472b6']
+    const gradPalettes = [
+      ['#4176e6', '#7b5cf0', '#22d3ee'],
+      ['#4176e6', '#06b6d4', '#34d399'],
+      ['#6366f1', '#a855f7', '#f472b6'],
+      ['#0ea5e9', '#4176e6', '#8b5cf6'],
+    ]
+    let whaleColor = whaleColors[Math.floor(Math.random() * whaleColors.length)]
+    let gradColors = gradPalettes[Math.floor(Math.random() * gradPalettes.length)]
+    let lastAppliedGrad = ''
+    let lastAppliedWhale = ''
+
+    // One-time structural setup: inject the linearGradient and point letter
+    // paths at it. Gradient stops are repainted on each cycle.
+    const applyLogoStructure = () => {
+      const svg = document.querySelector('[class*=\"_brand\"] svg')
+      if (svg === null) return
+      if (svg.dataset.dshLogoDone === '1') return
+      svg.dataset.dshLogoDone = '1'
+      const NS = 'http://www.w3.org/2000/svg'
+      const gradId = 'dsh-logo-grad'
+      const defs = document.createElementNS(NS, 'defs')
+      const grad = document.createElementNS(NS, 'linearGradient')
+      grad.id = gradId
+      grad.setAttribute('x1', '0')
+      grad.setAttribute('y1', '0')
+      grad.setAttribute('x2', '1')
+      grad.setAttribute('y2', '0')
+      defs.appendChild(grad)
+      svg.insertBefore(defs, svg.firstChild)
+      svg.querySelectorAll('path[fill="currentColor"]').forEach((p) => {
+        p.setAttribute('fill', 'url(#' + gradId + ')')
+      })
+    }
+
+    // Repaint the wordmark gradient and whale rect with current colors.
+    const applyLogo = () => {
+      const svg = document.querySelector('[class*="_brand"] svg')
+      if (svg === null) return
+      const gradKey = gradColors.join('|')
+      if (gradKey === lastAppliedGrad && whaleColor === lastAppliedWhale) return
+      const NS = 'http://www.w3.org/2000/svg'
+      let grad = svg.querySelector('linearGradient[id="dsh-logo-grad"]')
+      if (grad === null) {
+        delete svg.dataset.dshLogoDone
+        applyLogoStructure()
+        grad = svg.querySelector('linearGradient[id="dsh-logo-grad"]')
+        if (grad === null) return
+      }
+      while (grad.firstChild !== null) grad.removeChild(grad.firstChild)
+      gradColors.forEach((c, i) => {
+        const stop = document.createElementNS(NS, 'stop')
+        stop.setAttribute('offset', String((i * 100) / (gradColors.length - 1)) + '%')
+        stop.setAttribute('stop-color', c)
+        grad.appendChild(stop)
+      })
+      svg.querySelectorAll('rect').forEach((r) => {
+        if (r.getAttribute('fill') !== whaleColor) r.setAttribute('fill', whaleColor)
+      })
+      lastAppliedGrad = gradKey
+      lastAppliedWhale = whaleColor
+    }
+
+        // Collapsed rail fish: repaint with the same whale color (all paths,
+    // since a currentColor-only selector stops matching after first paint).
+    const applyRailFish = () => {
+      const fish = document.querySelector('[class*=\"_railFish\"]')
+      if (fish === null) return
+      fish.querySelectorAll('path').forEach((p) => {
+        if (p.getAttribute('fill') !== whaleColor) p.setAttribute('fill', whaleColor)
+      })
+    }
+
+    // Every 5s pick fresh whale + gradient colors and repaint whichever
+    // brand surface is visible. Timestamp guard dedupes the 1s heartbeat.
+    let lastBrandColorChange = 0
+    const cycleBrandColors = () => {
+      const now = Date.now()
+      if (now - lastBrandColorChange < 5000) return
+      lastBrandColorChange = now
+      whaleColor = whaleColors[Math.floor(Math.random() * whaleColors.length)]
+      gradColors = gradPalettes[Math.floor(Math.random() * gradPalettes.length)]
+      applyLogo()
+      applyRailFish()
+    }
+    setInterval(cycleBrandColors, 1000)
+
+    // Empty-state hero: pick one idle motion variant at random per launch.
+    const applyHero = () => {
+      const hero = document.querySelector('[class*=\"_heroGlow\"]')
+      if (hero === null) return
+      if (hero.dataset.dshHero !== undefined) return
+      const variants = ['drift', 'breathe', 'sway']
+      hero.dataset.dshHero = variants[Math.floor(Math.random() * variants.length)]
+    }
+
+    // Self-heal: re-append style if purged, re-apply brand + hero on
+    // re-render. The observer is throttled with requestAnimationFrame so the
+    // SPA's frequent DOM churn (typing, scrolling, animations) coalesces into
+    // at most one pass per frame instead of a synchronous query per mutation
+    // — that was pegging the renderer at 110% CPU.
+    let obsScheduled = false
+    const obsTick = () => {
+      obsScheduled = false
+      if (!document.head.contains(style)) {
+        if (document.querySelector('#dsh-dt-style') === null) document.head.appendChild(style)
+      }
+      applyLogoStructure()
+      applyLogo()
+      applyRailFish()
+      applyHero()
+    }
+    const obs = new MutationObserver(() => {
+      if (obsScheduled) return
+      obsScheduled = true
+      requestAnimationFrame(obsTick)
+    })
+    window.__dshDtStyleObserver = obs
+    obs.observe(document.head, { childList: true })
+    obs.observe(document.body, { childList: true, subtree: true })
+    applyLogoStructure()
+    applyLogo()
+    applyRailFish()
+    applyHero()
   })()`
 }

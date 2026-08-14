@@ -10,12 +10,20 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import { killProcessTree } from './process-tree.ts'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from './electron-api.ts'
-import { alphaControlScript, glassGuardScript, glassWindowOptions, loadGlassSettings, saveGlassSettings, themeScript, type GlassTheme } from './glass.ts'
+import { alphaControlScript, ambientStyleScript, glassGuardScript, glassWindowOptions, loadGlassSettings, saveGlassSettings, themeScript, type GlassTheme } from './glass.ts'
 import { resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
 
 const APP_ID = 'ai.deepseek.dsh-desktop'
 const WINDOW_TITLE = 'DSH Desktop'
 const STDERR_TAIL_LIMIT = 4_000
+
+// GPU stability on Linux/Wayland: hardware-accelerated rendering pegs the
+// renderer process (110%+ CPU) and intermittently crashes the GPU/network
+// services, making the window blank or unresponsive. Software rendering
+// keeps the translucent frameless window fully functional and smooth on
+// every compositor. Must run before app is ready.
+app.disableHardwareAcceleration()
+app.commandLine.appendSwitch('disable-gpu')
 /**
  * The repository root in dev, the asar root when packaged. Resolved from
  * `app.getAppPath()` rather than derived from `import.meta.url`: the built
@@ -118,6 +126,21 @@ async function injectAlphaControl(window: BrowserWindow): Promise<void> {
 }
 
 /**
+ * Inject the ambient texture layers, floating sidebar/details cards, compact
+ * new-session button, living brand (75px logo + 5s color cycling) and the
+ * hero glow animation into the hosted page. Platform-independent; errors are
+ * non-fatal, the next did-finish-load re-injects.
+ * @param window - the window hosting the page.
+ */
+async function injectAmbientStyle(window: BrowserWindow): Promise<void> {
+  try {
+    await window.webContents.executeJavaScript(ambientStyleScript())
+  } catch {
+    // Page not ready; the next did-finish-load re-injects.
+  }
+}
+
+/**
  * Change the window's glass tint and persist the choice. Driven by the
  * settings-page slider (via the `dsh:set-alpha` IPC) and by the tray menu.
  * @param alpha - the new tint opacity in [0, 1].
@@ -185,7 +208,20 @@ function createWindow(url: URL): void {
     },
   })
   mainWindow = window
-  window.once('ready-to-show', () => { window.show() })
+  // Fade the window in once the first paint is ready: on translucent shells
+  // a hard show can flash the opaque background before the glass tint lands.
+  window.once('ready-to-show', () => {
+    window.setOpacity(0)
+    window.show()
+    let step = 0
+    const FADE_STEPS = 14
+    const fadeIn = (): void => {
+      step += 1
+      window.setOpacity(Math.min(1, step / FADE_STEPS))
+      if (step < FADE_STEPS) setTimeout(fadeIn, 16)
+    }
+    fadeIn()
+  })
   // The SPA's theme plugin loads asynchronously after the document finishes
   // and re-applies its own theme attribute, clobbering an eager injection.
   // Debounce the glass application until the page has settled.
@@ -195,6 +231,7 @@ function createWindow(url: URL): void {
     glassTimer = setTimeout(() => {
       void applyGlass(window)
       void injectAlphaControl(window)
+      void injectAmbientStyle(window)
     }, 800)
   }
   window.webContents.on('did-finish-load', scheduleGlass)
