@@ -14,6 +14,8 @@ Web GUI 是 harness 交互最丰富的界面，但平常只活在浏览器标签
 
 它**只是一个外壳**：不打包 Node 运行时，也不打包 harness 依赖闭包 —— 跑的是你机器上已有的那个 `dsh web`。因此 harness 升级后它依然正确，不会锁死在某个快照上。
 
+![dsh-desktop 界面截图](screenshot.png)
+
 | | |
 |---|---|
 | **窗口** | 沙箱化渲染进程（`sandbox: true`、`contextIsolation: true`、`nodeIntegration: false`；preload 仅暴露透明度调节所需的 IPC 桥）—— GUI 就是一个普通 Web 应用 |

@@ -14,6 +14,8 @@ The Web GUI is the harness's richest surface but normally lives in a browser tab
 
 It is a **shell only**. It bundles no Node runtime and no harness closure — it runs whatever `dsh web` your machine already provides, so it stays correct across harness upgrades instead of pinning a snapshot.
 
+![dsh-desktop screenshot](screenshot.png)
+
 | | |
 |---|---|
 | **Window** | Sandboxed renderer (`sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`; preload exposes only the IPC bridge the opacity slider needs) — the GUI is a normal web application |
