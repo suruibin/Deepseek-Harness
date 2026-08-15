@@ -12,6 +12,7 @@ import { killProcessTree } from './process-tree.ts'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from './electron-api.ts'
 import { alphaControlScript, ambientStyleScript, glassGuardScript, glassWindowOptions, loadGlassSettings, saveGlassSettings, themeScript, type GlassTheme } from './glass.ts'
 import { resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
+import { repairSessionLogs } from './session-repair.ts'
 
 const APP_ID = 'ai.deepseek.dsh-desktop'
 const WINDOW_TITLE = 'DSH Desktop'
@@ -208,20 +209,20 @@ function createWindow(url: URL): void {
     },
   })
   mainWindow = window
-  // Fade the window in once the first paint is ready: on translucent shells
-  // a hard show can flash the opaque background before the glass tint lands.
-  window.once('ready-to-show', () => {
-    window.setOpacity(0)
+  // Show the window. The window starts with show:false and a transparent
+  // shell; the SPA paints its own translucent background, so there is no
+  // white flash. Two independent triggers guarantee the window appears even
+  // when ready-to-show is delayed or never fires under Wayland software
+  // rendering (previously the window stayed hidden until the tray icon was
+  // clicked):
+  //   1. ready-to-show — fires when the first paint is ready.
+  //   2. did-finish-load — fires when the page has loaded; show() is idempotent.
+  const showWindowWhenReady = (): void => {
+    if (window.isVisible()) return
     window.show()
-    let step = 0
-    const FADE_STEPS = 14
-    const fadeIn = (): void => {
-      step += 1
-      window.setOpacity(Math.min(1, step / FADE_STEPS))
-      if (step < FADE_STEPS) setTimeout(fadeIn, 16)
-    }
-    fadeIn()
-  })
+  }
+  window.once('ready-to-show', showWindowWhenReady)
+  window.webContents.once('did-finish-load', showWindowWhenReady)
   // The SPA's theme plugin loads asynchronously after the document finishes
   // and re-applies its own theme attribute, clobbering an eager injection.
   // Debounce the glass application until the page has settled.
@@ -350,6 +351,18 @@ function runDir(): string {
 
 async function boot(): Promise<void> {
   const launch = resolveWebLaunch({ env: process.env })
+  // 启动 dsh web 前自动检测并修复损坏的会话日志 (seq 缺口 / 多写流交错),
+  // 否则 GUI 打开历史会话时会报 "corrupt session log: seq gap" 而失败。
+  try {
+    const report = repairSessionLogs()
+    if (report.fixed > 0) {
+      console.log(`[dsh-desktop] 自动修复 ${report.fixed} 个损坏的会话日志: ${report.details.filter((d) => d.fixed).map((d) => d.id).join(', ')}`)
+    } else if (report.brokenRemaining > 0) {
+      console.warn(`[dsh-desktop] ${report.brokenRemaining} 个会话日志损坏且无法自动修复`)
+    }
+  } catch (error) {
+    console.warn(`[dsh-desktop] 会话日志自动修复失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
   if (launch.env.DSH_PERMISSION_MODE !== undefined && (process.env.DSH_PERMISSION_MODE === undefined || process.env.DSH_PERMISSION_MODE === '')) {
     console.warn(`[dsh-desktop] Windows has no harness confinement backend; using ${launch.env.DSH_PERMISSION_MODE} permission mode (approval prompts are disabled). Set DSH_PERMISSION_MODE to override.`)
   }

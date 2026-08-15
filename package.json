@@ -7,14 +7,15 @@
   "main": "lib/main.js",
   "license": "BSD-3-Clause",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "watch": "tsc -p tsconfig.json --watch",
+    "build": "node node_modules/typescript/bin/tsc -p tsconfig.json",
+    "watch": "node node_modules/typescript/bin/tsc -p tsconfig.json --watch",
     "dev": "npm run build && node scripts/run-electron.mjs",
     "icons": "node scripts/generate-icons.mjs",
-    "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "dist": "npm run build && electron-builder --config electron-builder.yml",
-    "dist:dir": "npm run build && electron-builder --config electron-builder.yml --dir"
+    "test": "node node_modules/vitest/vitest.mjs run",
+    "typecheck": "node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
+    "dist": "npm run build && node node_modules/electron-builder/cli.js --config electron-builder.yml",
+    "dist:dir": "npm run build && node node_modules/electron-builder/cli.js --config electron-builder.yml --dir",
+    "repair": "node scripts/repair-session-log.mjs"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
