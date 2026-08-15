@@ -56,6 +56,7 @@ Installers are unsigned, so Windows SmartScreen and macOS Gatekeeper will warn o
 - **Tree termination.** On Windows the kill is `taskkill /T /F`, because `child.kill()` is `TerminateProcess` of the direct child only. On POSIX the server is spawned detached and the whole process group is signalled, SIGTERM then SIGKILL after a grace period. The server does not run a graceful-dispose path; session data is written per event to JSONL, so a killed server loses nothing already logged.
 - **External links.** Anything that opens a new window or navigates off the server origin goes to the system browser, restricted to `http(s)`; unparsable targets are dropped.
 - **Workspace semantics** are the CLI's: the invoking directory is the default project root. Launching from a desktop shortcut starts in the shell's cwd, so prefer opening the app from a project directory or picking the Workspace in the GUI.
+- **Transparent windows on Wayland.** The frosted-glass window needs a 32-bit (ARGB) visual. On compositors that expose their X server through xwayland-satellite (e.g. niri), that visual does not exist and the window silently falls back to opaque. When a Wayland session is present (`WAYLAND_DISPLAY` set), `npm run dev` launches Electron with `--ozone-platform=wayland` so the compositor's native ARGB surfaces are used; packaged builds need the same argument or `ELECTRON_OZONE_PLATFORM_HINT=wayland`.
 - **Logs.** The server's stdout is forwarded with a `[dsh web]` prefix; run the app from a terminal to see both streams.
 
 ## Customizations
@@ -67,11 +68,12 @@ Local changes on top of the upstream shell:
 - **Trimmed tray menu**: the Opacity and Theme entries were removed from the tray context menu (Open Window / Quit only); theme and opacity are managed from the settings page.
 - **Icons**: the window and tray icons are rendered in DeepSeek brand blue (`#4176e6`); `scripts/generate-icons.mjs` honors a `DSH_FAVICON` override for the favicon source and no longer forces the icon white under dark mode.
 - **Fix**: live opacity/theme adjustments from the tray did not apply — repeated glass-guard injections stacked MutationObservers that overwrote each other's values; each injection now disconnects the previous observer first, so adjustments take effect immediately.
+- **Embedded terminal + file browser**: a terminal toggle at the bottom edge opens a bottom terminal dock that starts at the conversation sidebar's right edge (never covering it) and squeezes the app up by the dock height, so the message input stays visible above it; a files toggle (top-right) opens a right-side file panel that squeezes the app horizontally (the conversation is never hidden) and is drag-resizable. Both use the page's translucent glass tokens for their backgrounds, so the frosted effect stays intact. Terminal tabs map 1:1 to main-process PTY sessions (`src/pty-registry.ts`), mirroring DSH better-sidebar semantics: an attach replays the bounded transcript, live output streams per tab, closing a tab releases its process, exited tabs show the code and respawn on re-attach, and a per-window cap bounds concurrent shells. Font family/size persist to localStorage and the xterm theme follows the page's dark/light tokens in place. The file panel is a navigable browser — enter directories, back/forward/up history, click a file to preview (512 KiB-capped `dsh:fs-read`) — with git change badges: the current branch in the path bar and per-file `M/A/D/?` marks from `git status --porcelain` (`src/git-status.ts` via `dsh:git-status`).
 
 ## Tests
 
 ```sh
-npm test        # 28 keyless cases: command resolution, readiness parsing, HTTP polling
+npm test        # 49 keyless cases: command resolution, readiness parsing, HTTP polling, PTY registry, git status
 npm run typecheck
 ```
 

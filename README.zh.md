@@ -56,6 +56,7 @@ npm run dist:dir    # 只输出未打包目录，用于快速冒烟
 - **进程树终止**。Windows 上用 `taskkill /T /F`，因为 `child.kill()` 只是对直接子进程做 `TerminateProcess`。POSIX 上服务端以 detached 方式启动，信号发给整个进程组：先 SIGTERM，宽限期后升级为 SIGKILL。服务端不走优雅 dispose 路径；会话数据按事件逐条写入 JSONL，所以被杀掉的服务端不会丢失任何已记录的内容。
 - **外部链接**。任何打开新窗口或导航离开服务端 origin 的行为都转交系统浏览器，且限定 `http(s)`；无法解析的目标直接丢弃。
 - **工作区语义**沿用 CLI 的：调用目录即默认项目根。从桌面快捷方式启动会以外壳的 cwd 为起点，因此建议从项目目录打开应用，或在 GUI 里选择 Workspace。
+- **Wayland 下的透明窗口**。磨砂玻璃窗口需要 32 位（ARGB）visual。在通过 xwayland-satellite 暴露 X server 的合成器（如 niri）上不存在该 visual，窗口会静默回退为不透明。当存在 Wayland 会话（设置了 `WAYLAND_DISPLAY`）时，`npm run dev` 会用 `--ozone-platform=wayland` 启动 Electron，使用合成器原生 ARGB 表面；打包版需要同样的参数或 `ELECTRON_OZONE_PLATFORM_HINT=wayland`。
 - **日志**。服务端 stdout 以 `[dsh web]` 前缀转发；从终端启动应用可同时看到两路输出。
 
 ## 自定义改动
@@ -67,11 +68,12 @@ npm run dist:dir    # 只输出未打包目录，用于快速冒烟
 - **托盘菜单精简**：托盘右键菜单移除了 Opacity / Theme 两个入口，只保留「打开窗口 / 退出」；主题与透明度统一在设置页内管理。
 - **图标**：窗口与托盘图标改为 DeepSeek 品牌蓝（`#4176e6`）；`scripts/generate-icons.mjs` 支持 `DSH_FAVICON` 环境变量指定 favicon 源路径，并修复了暗色模式下图标被强制渲染成白色的问题。
 - **修复**：托盘调整透明度/主题不生效 —— 多次注入的玻璃守卫脚本会堆叠多个 MutationObserver 互相覆盖取值；现在每次注入先断开上一个观察器，实时调整可立即生效。
+- **嵌入式终端 + 文件浏览器**：**底部边缘**的终端开关打开**底部终端 dock**——dock 从左侧会话栏右缘开始（不覆盖侧边栏），打开时主界面整体上移让位，输入框始终在 dock 上方可见；右上角的文件开关打开**右侧文件面板**，面板挤压式让主界面变窄（消息不被遮挡），左侧边缘可**拖拽调整宽度**。两者背景均使用页面的半透明玻璃 token，磨砂效果不破坏。终端标签与主进程 PTY 会话一一对应（`src/pty-registry.ts`），对齐 DSH better-sidebar 语义：attach 时回放有界 transcript、输出按标签实时推送、关闭标签即释放进程、已退出标签显示退出码并在重新 attach 时重生、窗口级并发上限。字体族/字号持久化到 localStorage，xterm 主题跟随页面明暗 token 实时切换。文件面板是**导航式**浏览器——点击目录进入、后退/前进/上级历史导航、点击文件预览（512 KiB 上限 `dsh:fs-read`）——并带 git 变更徽标：路径栏显示当前分支、文件行显示 `M/A/D/?` 标记（`src/git-status.ts`，经 `dsh:git-status`）。
 
 ## 测试
 
 ```sh
-npm test        # 28 个无密钥用例：命令解析、就绪行解析、HTTP 轮询
+npm test        # 49 个无密钥用例：命令解析、就绪行解析、HTTP 轮询、PTY 注册表、git status
 npm run typecheck
 ```
 

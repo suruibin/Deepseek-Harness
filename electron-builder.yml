@@ -29,6 +29,9 @@ mac:
 linux:
   icon: build/icon.png
   category: Development
+  # Artifact file name (AppImage + tar.gz) follows the project name; the
+  # display productName stays "DSH Desktop".
+  artifactName: Deepseek-Harness-${version}.${ext}
   target:
     - AppImage
     - tar.gz
