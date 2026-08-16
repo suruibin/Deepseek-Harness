@@ -69,6 +69,16 @@ const git = {
   status: (): Promise<unknown> => ipcRenderer.invoke('dsh:git-status'),
 }
 
+/** Background wallpaper for the hosted page. */
+const wallpaper = {
+  /** Open the system file picker; resolves to { url, file } | { canceled: true } | { error }. */
+  pick: (): Promise<unknown> => ipcRenderer.invoke('dsh:wallpaper-pick'),
+  /** Remove the wallpaper; resolves to { ok: true }. */
+  clear: (): Promise<unknown> => ipcRenderer.invoke('dsh:wallpaper-clear'),
+  /** Current wallpaper; resolves to { url, file } or { url: null }. */
+  get: (): Promise<unknown> => ipcRenderer.invoke('dsh:wallpaper-get'),
+}
+
 /** /backup command bridge (mirrors the backup skill's semantics). */
 const backup = {
   /** Backup a source directory; resolves to { ok, backupDir, output } or { error }. */
@@ -102,6 +112,8 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   fs,
   /** Git status bridge. */
   git,
+  /** Background wallpaper bridge. */
+  wallpaper,
   /** /backup command bridge. */
   backup,
   /** Terminal state bridge. */

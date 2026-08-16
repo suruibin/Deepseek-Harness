@@ -10,6 +10,7 @@ directories:
 files:
   - lib/**
   - build/**
+  - plugins/**
   - package.json
 asar: true
 # The reaper runs under Electron-as-Node, which cannot read inside app.asar.

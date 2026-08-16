@@ -14,11 +14,13 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shel
 // node-pty is a native module; loaded lazily so a missing/broken build does
 // not break the shell. The embedded terminal feature degrades gracefully.
 const require_ = createRequire(import.meta.url)
-import { alphaControlScript, ambientStyleScript, glassGuardScript, glassWindowOptions, inputHistoryScript, loadGlassSettings, saveGlassSettings, terminalScript, themeScript, whaleSprayScript, type GlassTheme } from './glass.ts'
+import { alphaControlScript, ambientStyleScript, glassGuardScript, glassWindowOptions, inputHistoryScript, loadGlassSettings, saveGlassSettings, terminalScript, themeScript, themeSettingsScript, wallpaperControlScript, wallpaperLayerScript, whaleSprayScript, type GlassTheme } from './glass.ts'
 import { gitStatus } from './git-status.ts'
 import { resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
+import { mergePlugins, pluginsCssScript, readPluginDir } from './plugins.ts'
 import { PtyRegistry } from './pty-registry.ts'
 import { repairSessionLogs } from './session-repair.ts'
+import { removeStoredWallpaper, storeWallpaper, wallpaperDataUrl } from './wallpaper.ts'
 
 const APP_ID = 'ai.deepseek.dsh-desktop'
 const WINDOW_TITLE = 'DSH Desktop'
@@ -59,11 +61,18 @@ let failing = false
 // A focus request (second launch, tray click) that arrived while the server
 // was still booting and no window existed yet; honored once boot completes.
 let pendingFocus = false
-// Glass styling state: the current Linux tint alpha and theme preference.
+// Glass styling state: the current Linux tint alpha, theme preference, and
+// the stored wallpaper file name (or null).
 const userData = app.getPath('userData')
 const initialGlass = loadGlassSettings(userData)
 let windowAlpha = initialGlass.alpha
 let windowTheme: GlassTheme = initialGlass.theme
+let wallpaperFile: string | null = initialGlass.wallpaper
+
+/** Persist the current glass settings (alpha, theme, wallpaper). */
+function saveGlass(): void {
+  saveGlassSettings(userData, { alpha: windowAlpha, theme: windowTheme, wallpaper: wallpaperFile })
+}
 
 function iconPath(): string {
   return join(PACKAGE_DIR, 'build', 'icon.png')
@@ -112,13 +121,19 @@ async function applyGlassTheme(window: BrowserWindow, theme: GlassTheme): Promis
 
 /**
  * (Re)apply the full glass styling to a window: force the theme first, then
- * install the self-healing tint guard (which keys off the theme attribute).
+ * install the self-healing tint guard (which keys off the theme attribute),
+ * then (re)mount the wallpaper layer under the translucent canvas.
  * @param window - the window to restyle.
  */
 async function applyGlass(window: BrowserWindow): Promise<void> {
   await applyGlassTheme(window, windowTheme)
   try {
     await window.webContents.executeJavaScript(glassGuardScript(windowAlpha))
+  } catch {
+    // Page not ready; the next did-finish-load re-applies it.
+  }
+  try {
+    await window.webContents.executeJavaScript(wallpaperLayerScript())
   } catch {
     // Page not ready; the next did-finish-load re-applies it.
   }
@@ -134,6 +149,38 @@ async function applyGlass(window: BrowserWindow): Promise<void> {
 async function injectAlphaControl(window: BrowserWindow): Promise<void> {
   try {
     await window.webContents.executeJavaScript(alphaControlScript())
+  } catch {
+    // Settings panel not ready; the next did-finish-load re-injects.
+  }
+}
+
+/**
+ * Inject the "Theme Settings" (主题设置) entry into the hosted settings page:
+ * a new sidebar nav item that hosts the background-opacity slider, the cursor
+ * effects and the wallpaper picker (moved out of 通用设置 → 外观). The script
+ * self-heals; errors are non-fatal, the next did-finish-load re-injects.
+ * @param window - the window hosting the settings page.
+ */
+async function injectThemeSettings(window: BrowserWindow): Promise<void> {
+  try {
+    await window.webContents.executeJavaScript(themeSettingsScript())
+  } catch {
+    // Settings panel not ready; the next did-finish-load re-injects.
+  }
+}
+
+/**
+ * Inject the background-wallpaper control into the hosted settings page,
+ * mounted below the background-opacity slider inside the Theme Settings panel
+ * (主题设置). The button
+ * opens the system file picker via the `dsh:wallpaper-pick` IPC; the choice
+ * is persisted by the main process. Errors are non-fatal, the next
+ * did-finish-load re-injects.
+ * @param window - the window hosting the settings page.
+ */
+async function injectWallpaperControl(window: BrowserWindow): Promise<void> {
+  try {
+    await window.webContents.executeJavaScript(wallpaperControlScript())
   } catch {
     // Settings panel not ready; the next did-finish-load re-injects.
   }
@@ -163,6 +210,43 @@ async function injectAmbientStyle(window: BrowserWindow): Promise<void> {
     await window.webContents.executeJavaScript(whaleSprayScript())
   } catch {
     // Page not ready; the next did-finish-load re-injects.
+  }
+}
+
+/**
+ * Inject user plugins into the hosted page. Plugins are CSS/JS files loaded
+ * from two directories, merged with user files taking precedence over the
+ * built-in ones (see `src/plugins.ts`):
+ *   - <appPath>/plugins      — ships with the package (the asar in release
+ *     builds), so every install gets the built-in fixes.
+ *   - <userData>/plugins     — user-owned, overrides the built-ins; lets a
+ *     user restyle the shell without touching the package.
+ * CSS is mounted as one <style> node; each JS file runs in page context.
+ * Errors are non-fatal: the shell keeps running without plugins, and the
+ * next did-finish-load re-injects.
+ * @param window - the window hosting the page.
+ */
+async function injectPlugins(window: BrowserWindow): Promise<void> {
+  try {
+    const merged = mergePlugins(
+      readPluginDir(join(PACKAGE_DIR, 'plugins')),
+      readPluginDir(join(userData, 'plugins')),
+    )
+    const css = merged.filter((f) => f.name.endsWith('.css'))
+    if (css.length > 0) {
+      await window.webContents.executeJavaScript(pluginsCssScript(css.map((f) => f.content)))
+    }
+    for (const file of merged) {
+      if (!file.name.endsWith('.js')) continue
+      try {
+        await window.webContents.executeJavaScript(file.content)
+      } catch {
+        // A broken user JS plugin must not break the shell.
+        console.error(`[dsh-desktop] plugin ${file.name} failed to execute`)
+      }
+    }
+  } catch {
+    // Plugin load failed; the next did-finish-load re-injects.
   }
 }
 
@@ -203,7 +287,7 @@ async function injectTerminal(window: BrowserWindow): Promise<void> {
 function setWindowAlpha(alpha: number): void {
   if (alpha === windowAlpha) return
   windowAlpha = alpha
-  saveGlassSettings(userData, { alpha, theme: windowTheme })
+  saveGlass()
   if (mainWindow !== undefined) void applyGlass(mainWindow)
 }
 
@@ -307,8 +391,11 @@ function createWindow(url: URL): void {
     if (glassTimer !== undefined) clearTimeout(glassTimer)
     glassTimer = setTimeout(() => {
       void applyGlass(window)
+      void injectThemeSettings(window)
       void injectAlphaControl(window)
+      void injectWallpaperControl(window)
       void injectAmbientStyle(window)
+      void injectPlugins(window)
       void injectTerminal(window)
     }, 800)
   }
@@ -729,6 +816,35 @@ if (!app.requestSingleInstanceLock()) {
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) }
     }
+  })
+  // Wallpaper IPC (preload bridge): pick (system file dialog + store under
+  // userData), clear, and get (current data URL). The renderer side is
+  // hostile surface, so the file path never comes from it — the dialog is
+  // owned by the main process.
+  ipcMain.handle('dsh:wallpaper-pick', async () => {
+    const options = {
+      title: 'Select wallpaper',
+      properties: ['openFile' as const],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp'] }],
+    }
+    const result = mainWindow !== undefined
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options)
+    if (result.canceled || result.filePaths.length === 0) return { canceled: true }
+    const stored = storeWallpaper(userData, result.filePaths[0]!)
+    if ('error' in stored) return stored
+    wallpaperFile = stored.file
+    saveGlass()
+    return { url: stored.url, file: stored.file }
+  })
+  ipcMain.handle('dsh:wallpaper-clear', () => {
+    removeStoredWallpaper(userData, wallpaperFile)
+    wallpaperFile = null
+    saveGlass()
+    return { ok: true }
+  })
+  ipcMain.handle('dsh:wallpaper-get', () => {
+    return { url: wallpaperDataUrl(userData, wallpaperFile), file: wallpaperFile }
   })
   // Terminal state persistence IPC: the injected panel remembers each
   // project's terminal tabs (names + working directories) across launches.

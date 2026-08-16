@@ -1,0 +1,16 @@
+/* dsh-desktop built-in plugin: settings icon in the collapsed sidebar rail.
+ *
+ * Root cause (fixed 2026-08-16): the settings button's SVG path carries no
+ * `fill` attribute and no CSS rule paints it, so when the sidebar collapses
+ * to its narrow rail the fill falls back to the SVG initial value — black —
+ * and the gear becomes invisible on the dark glass rail. `currentColor`
+ * follows the button's label color (--dsw-alias-label-primary): white in
+ * dark mode, dark in light mode, so the icon stays visible in both themes
+ * and both sidebar states.
+ *
+ * To override this rule, drop a file with the same basename into
+ * <userData>/plugins/ (see README.zh.md → 插件).
+ */
+[class*="_footArea"] [class*="_settingsArea"] [class*="_trigger"] svg path {
+  fill: currentColor !important;
+}

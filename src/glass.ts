@@ -24,6 +24,8 @@ export interface GlassSettings {
   alpha: number
   /** Forced UI theme for the hosted page; 'system' follows the OS. */
   theme: GlassTheme
+  /** Stored wallpaper file name under userData, or null for none. */
+  wallpaper: string | null
 }
 
 /** How the hosted page's dark/light theme is chosen. */
@@ -173,12 +175,13 @@ export function loadGlassSettings(userData: string): GlassSettings {
       return {
         alpha: clampUnit(typeof p.alpha === 'number' ? p.alpha : DEFAULT_ALPHA),
         theme: normalizeTheme(p.theme),
+        wallpaper: typeof p.wallpaper === 'string' && p.wallpaper !== '' ? p.wallpaper : null,
       }
     }
   } catch {
     // Missing or unparsable settings are not worth surfacing; use defaults.
   }
-  return { alpha: DEFAULT_ALPHA, theme: DEFAULT_THEME }
+  return { alpha: DEFAULT_ALPHA, theme: DEFAULT_THEME, wallpaper: null }
 }
 
 /** Persist glass settings (best-effort; a failed write must not crash the app). */
@@ -279,24 +282,20 @@ export function alphaControlScript(): string {
     const MOUNTED = '[data-dsh-glass-alpha]'
     const mount = () => {
       if (window.dshDesktop === undefined) return
-      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
-      let node
-      while ((node = walker.nextNode()) !== null) {
-        const text = (node.textContent ?? '').trim()
-        // The title text of the Appearance row doubles as the locale probe:
-        // matching the Chinese label means the UI is Chinese, and vice versa.
-        const title = text === '外观' ? '背景透明度' : text === 'Appearance' ? 'Background opacity' : ''
-        if (title === '') continue
-        const group = node.parentElement?.parentElement
-        if (group === undefined || group === null) continue
-        const existing = document.querySelector(MOUNTED)
-        if (existing !== null) {
-          // Already mounted (the SPA swaps locale text in place without
-          // rebuilding the row): keep the control, sync its title.
-          const titleEl = existing.firstElementChild
-          if (titleEl !== null && titleEl.textContent !== title) titleEl.textContent = title
-          return
-        }
+      // The alpha slider now lives in the injected Theme Settings panel
+      // (主题设置), mounted by themeSettingsScript — not the Appearance row.
+      const panel = document.querySelector('[data-dsh-theme-panel]')
+      if (panel === null) return
+      const zh = window.__dshThemeLocale !== 'en'
+      const title = zh ? '背景透明度' : 'Background opacity'
+      const existing = document.querySelector(MOUNTED)
+      if (existing !== null) {
+        // Already mounted (the SPA swaps locale text in place without
+        // rebuilding the panel): keep the control, sync its title.
+        const titleEl = existing.firstElementChild
+        if (titleEl !== null && titleEl.textContent !== title) titleEl.textContent = title
+        return
+      }
         const control = document.createElement('div')
         control.dataset.dshGlassAlpha = 'true'
         control.style.cssText = 'flex-direction:column;gap:8px;padding:16px 0;display:flex'
@@ -396,12 +395,11 @@ export function alphaControlScript(): string {
           fxCenter.addEventListener('change', () => { fx.center = fxCenter.value; applyFx() })
           applyFx()
         }
-        // Mount inside the Appearance row (below its cubes) so the control
-        // lives and dies with the row instead of lingering as a sibling when
-        // the SPA rebuilds the settings panel.
-        group.appendChild(control)
-        return
-      }
+      // Mount inside the Theme Settings panel's dedicated opacity slot so the
+      // control lives and dies with the panel instead of lingering when the
+      // SPA rebuilds the settings panel.
+      const holder = panel.querySelector('[data-dsh-theme-alpha-slot]') || panel
+      holder.appendChild(control)
     }
     mount()
     const obs = new MutationObserver(mount)
@@ -2308,6 +2306,369 @@ export function terminalScript(): string {
         termDock.remove()
         filesPanel.remove()
       },
+    }
+  })()`
+}
+
+/**
+ * The wallpaper layer injected into the hosted page: a fixed, full-viewport
+ * div at the bottom of the stacking order (z-index -1) that sits between the
+ * page background and the SPA's translucent glass canvas layers. The picked
+ * image is blurred slightly and darkened so chat text stays readable, and
+ * scaled past the viewport edge so the blur never shows a white rim.
+ *
+ * The URL is fetched asynchronously through the preload bridge and parked on
+ * a window global (`__dshWallpaperUrl`) so repeated injections and the
+ * self-healing observer never re-fetch it; a MutationObserver re-appends the
+ * layer if the SPA re-renders it away, mirroring the glass guard's pattern.
+ */
+export function wallpaperLayerScript(): string {
+  return `(() => {
+    if (window.__dshWallpaperObserver) {
+      window.__dshWallpaperObserver.disconnect()
+      window.__dshWallpaperObserver = undefined
+    }
+    const ensure = () => {
+      let el = document.getElementById('dsh-dt-wallpaper')
+      if (el === null) {
+        el = document.createElement('div')
+        el.id = 'dsh-dt-wallpaper'
+        el.style.cssText = 'position:fixed;inset:0;z-index:-1;pointer-events:none;' +
+          'background-size:cover;background-position:center;background-repeat:no-repeat;' +
+          'filter:blur(8px) brightness(0.72);transform:scale(1.06)'
+        document.body.prepend(el)
+      }
+      const url = window.__dshWallpaperUrl
+      el.style.backgroundImage = url ? 'url("' + url + '")' : 'none'
+    }
+    ensure()
+    const obs = new MutationObserver(ensure)
+    window.__dshWallpaperObserver = obs
+    obs.observe(document.body, { childList: true, subtree: true })
+    window.dshDesktop.wallpaper.get().then((res) => {
+      const r = res
+      window.__dshWallpaperUrl = (r !== null && typeof r === 'object' && typeof r.url === 'string') ? r.url : null
+      ensure()
+    }).catch(() => {})
+  })()`
+}
+
+/**
+ * Injected UI for the background wallpaper in the hosted settings page,
+ * mounted below the background-opacity control (通用设置 → 外观). Same mount
+ * strategy as the alpha slider: watch the DOM, mount on the Appearance row,
+ * keep an existing control in place (locale switches only re-sync the title).
+ * The "choose" button opens the system file dialog in the main process via
+ * the preload bridge; "remove" clears the wallpaper.
+ */
+export function wallpaperControlScript(): string {
+  return `(() => {
+    if (window.__dshWallpaperControlObserver) {
+      window.__dshWallpaperControlObserver.disconnect()
+      window.__dshWallpaperControlObserver = undefined
+    }
+    const MOUNTED = '[data-dsh-wallpaper]'
+    const mount = () => {
+      if (window.dshDesktop === undefined) return
+      // The wallpaper control now lives in the injected Theme Settings panel
+      // (主题设置), mounted by themeSettingsScript — not the Appearance row.
+      const panel = document.querySelector('[data-dsh-theme-panel]')
+      if (panel === null) return
+      const zh = window.__dshThemeLocale !== 'en'
+      const title = zh ? '背景壁纸' : 'Wallpaper'
+      const existing = document.querySelector(MOUNTED)
+      if (existing !== null) {
+        const titleEl = existing.firstElementChild
+        if (titleEl !== null && titleEl.textContent !== title) titleEl.textContent = title
+        return
+      }
+        const pickLabel = zh ? '选择壁纸…' : 'Choose wallpaper…'
+        const clearLabel = zh ? '移除' : 'Remove'
+        const control = document.createElement('div')
+        control.dataset.dshWallpaper = 'true'
+        control.style.cssText = 'flex-direction:column;gap:10px;padding:16px 0;display:flex'
+        control.innerHTML =
+          '<div style="color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px"></div>' +
+          '<div style="display:flex;align-items:center;gap:10px">' +
+            '<button data-dsh-wallpaper-pick style="background:#4176e6;color:#fff;border:none;border-radius:16px;padding:6px 14px;font-size:13px;cursor:pointer">' + pickLabel + '</button>' +
+            '<button data-dsh-wallpaper-clear style="background:transparent;color:var(--dsw-alias-label-primary);border:1px solid rgba(65,118,230,0.4);border-radius:16px;padding:6px 14px;font-size:13px;cursor:pointer">' + clearLabel + '</button>' +
+            '<span data-dsh-wallpaper-name style="flex:1;color:var(--dsw-alias-label-secondary);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right"></span>' +
+          '</div>'
+        const titleEl = control.firstElementChild
+        if (titleEl !== null) titleEl.textContent = title
+        const pickBtn = control.querySelector('[data-dsh-wallpaper-pick]')
+        const clearBtn = control.querySelector('[data-dsh-wallpaper-clear]')
+        const nameEl = control.querySelector('[data-dsh-wallpaper-name]')
+        if (pickBtn === null || clearBtn === null || nameEl === null) return
+        const apply = (url, file) => {
+          window.__dshWallpaperUrl = url
+          nameEl.textContent = file === null ? '' : file
+          const layer = document.getElementById('dsh-dt-wallpaper')
+          if (layer !== null) layer.style.backgroundImage = url ? 'url("' + url + '")' : 'none'
+        }
+        pickBtn.addEventListener('click', () => {
+          window.dshDesktop.wallpaper.pick().then((res) => {
+            if (res === null || typeof res !== 'object') return
+            if (res.canceled) return
+            if (typeof res.error === 'string') { alert(res.error); return }
+            if (typeof res.url === 'string') apply(res.url, typeof res.file === 'string' ? res.file : null)
+          }).catch(() => {})
+        })
+        clearBtn.addEventListener('click', () => {
+          window.dshDesktop.wallpaper.clear().then((res) => {
+            if (res !== null && typeof res === 'object' && res.ok) apply(null, null)
+          }).catch(() => {})
+        })
+        window.dshDesktop.wallpaper.get().then((res) => {
+          if (res !== null && typeof res === 'object') {
+            const url = typeof res.url === 'string' ? res.url : null
+            apply(url, typeof res.file === 'string' ? res.file : null)
+          }
+        }).catch(() => {})
+      // Mount inside the Theme Settings panel's dedicated wallpaper slot (the
+      // first block in the panel, above the opacity slider).
+      const holder = panel.querySelector('[data-dsh-theme-wallpaper-slot]') || panel
+      holder.appendChild(control)
+    }
+    mount()
+    const obs = new MutationObserver(mount)
+    window.__dshWallpaperControlObserver = obs
+    // childList: row (re)mounts; characterData: locale switches swap text in
+    // place, which must re-sync the mounted control's title.
+    obs.observe(document.body, { childList: true, subtree: true, characterData: true })
+  })()`
+}
+
+/**
+ * Injected UI for a dedicated "Theme Settings" (主题设置) entry in the hosted
+ * settings sidebar. Adds a nav item right after "通用设置/General" and, when
+ * clicked, hides the SPA's own sections and mounts a theme panel that hosts
+ * the background-opacity slider, the cursor effects and the wallpaper picker
+ * (all injected by alphaControlScript / wallpaperControlScript into the
+ * `[data-dsh-theme-controls]` holder).
+ *
+ * The click is captured and stopped so React never switches to a view it does
+ * not know; active-state highlighting is simulated by toggling the same class
+ * the SPA uses. A self-healing observer re-inserts the nav cell whenever the
+ * settings panel is rebuilt, closes the panel when the user picks another
+ * entry (the SPA re-renders its own content), and re-opens it if the SPA
+ * re-renders the content area while the theme panel is open.
+ */
+export function themeSettingsScript(): string {
+  return `(() => {
+    if (window.__dshThemeSettings) {
+      try { window.__dshThemeSettings.cleanup() } catch {}
+    }
+    const CELL_SEL = '[class*="_navCell"]'
+    const state = { cell: null, navList: null, open: false }
+    let healTimer = null
+    const findNavList = () => document.querySelector('[class*="_navList"]')
+    const findOptions = () => {
+      // Anchor on the settings nav list and walk UP to the panel: a bare
+      // [class*="_panel"] query can match an SVG (whose className is a
+      // non-string object) elsewhere in the page.
+      const nav = document.querySelector('[class*="_navList"]')
+      const panel = nav === null ? null : nav.closest('div[class*="_panel"]')
+      return panel === null ? null : panel.querySelector('[class*="_options"]')
+    }
+    const locale = () => {
+      const list = findNavList()
+      if (list === null) return 'zh'
+      const t = list.textContent ?? ''
+      return /General/.test(t) && !/通用设置/.test(t) ? 'en' : 'zh'
+    }
+    const themeTitle = () => (locale() === 'zh' ? '主题设置' : 'Theme')
+    const activeClass = () => {
+      // Any highlighted cell, not just the first one: when the user had
+      // switched to e.g. 插件 the highlight lives on that entry, and the
+      // first cell (通用设置) is not active at all.
+      const cell = Array.from(document.querySelectorAll(CELL_SEL)).find((c) => /active/i.test(c.className))
+      return cell === undefined ? undefined : Array.from(cell.classList).find((c) => /active/i.test(c))
+    }
+    // The cell whose highlight we borrow while the theme panel is open, so
+    // closing restores it (React will not re-render the nav on its own: the
+    // injected button is invisible to React, so nothing triggers a repaint).
+    let prevActiveCell = null
+    let prevActiveClass = null
+    const setActive = (on) => {
+      if (state.cell === null) return
+      // Fall back to the button's own active class: during a nav re-render
+      // there may be no other active cell to sample from.
+      const act = activeClass() ?? Array.from(state.cell.classList).find((c) => /active/i.test(c))
+      if (act === undefined) return
+      if (on) {
+        // Highlight ours; remember (and dim) the SPA's current cell.
+        const cur = Array.from(document.querySelectorAll(CELL_SEL)).find((c) => c !== state.cell && c.classList.contains(act))
+        if (cur !== undefined) {
+          prevActiveCell = cur
+          prevActiveClass = act
+          cur.classList.remove(act)
+        }
+        state.cell.classList.add(act)
+      } else {
+        // Close only dims OUR entry; never touch the SPA's own highlight.
+        state.cell.classList.remove(act)
+        // Restore the borrowed highlight — unless the SPA has since
+        // highlighted another entry (the user switched views meanwhile).
+        const current = Array.from(document.querySelectorAll(CELL_SEL)).find((c) => c !== state.cell && c.classList.contains(act))
+        if (current === undefined && prevActiveCell !== null && prevActiveClass !== null && document.body.contains(prevActiveCell)) {
+          prevActiveCell.classList.add(prevActiveClass)
+        }
+        prevActiveCell = null
+        prevActiveClass = null
+      }
+    }
+    const ensureCell = () => {
+      const list = findNavList()
+      if (list === null) return
+      const nav = list.parentElement
+      if (nav === null) return
+      // Native nav cells: close our panel before React handles their click,
+      // so switching entries never leaves the theme panel behind.
+      for (const c of list.querySelectorAll(CELL_SEL)) {
+        if (c.dataset.dshNavGuard === '1') continue
+        c.dataset.dshNavGuard = '1'
+        c.addEventListener('click', () => {
+          if (state.open) closePanel()
+        }, true)
+      }
+      if (nav.querySelector('[data-dsh-theme-nav]') !== null) {
+        const span = nav.querySelector('[data-dsh-theme-nav] span')
+        const t = themeTitle()
+        if (span !== null && span.textContent !== t) span.textContent = t
+        state.cell = nav.querySelector('[data-dsh-theme-nav]')
+        return
+      }
+      const sample = list.querySelector(CELL_SEL)
+      if (sample === null) return
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = sample.className
+      // Do not inherit the sample's active highlight (the SPA's nav is
+      // usually showing 通用设置 as active when we first mount).
+      for (const c of btn.classList) {
+        if (/active/i.test(c)) btn.classList.remove(c)
+      }
+      btn.dataset.dshThemeNav = 'true'
+      // Theme entry gets its own palette icon (16×16 fill style matching the
+      // SPA's nav icons) instead of cloning the sample's gear.
+      const iconWrap = document.createElement('div')
+      iconWrap.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1C4.14 1 1 4.14 1 8c0 3.87 3.13 7 7 7 .78 0 1.35-.57 1.35-1.33 0-.33-.14-.63-.38-.84-.24-.23-.38-.53-.38-.87 0-.73.59-1.33 1.33-1.33h1.53c2.8 0 5.05-2.4 5.05-5.63C16.5 3.4 12.7 1 8 1z"/><circle cx="4" cy="6.9" r="1.5"/><circle cx="6.6" cy="3.6" r="1.5"/><circle cx="10.6" cy="3.8" r="1.5"/><circle cx="12.7" cy="6.9" r="1.5"/></svg>'
+      const icon = iconWrap.firstElementChild
+      if (icon !== null) {
+        const iconSample = sample.querySelector('svg')
+        if (iconSample !== null && iconSample.getAttribute('class') !== null) {
+          icon.setAttribute('class', iconSample.getAttribute('class'))
+        }
+        btn.appendChild(icon)
+      }
+      const span = document.createElement('span')
+      const labelSample = sample.querySelector('span')
+      span.className = labelSample !== null ? labelSample.className : ''
+      span.textContent = themeTitle()
+      btn.appendChild(span)
+      // Append AFTER the nav list, as a sibling of the list inside the nav
+      // container. A button injected INTO the list skews React's implicit
+      // index keys, so React maps its click onto a neighbouring entry (e.g.
+      // 模型) and switches the content view. As a sibling, React resolves the
+      // click to the nav container (which has no handler) and leaves it alone.
+      nav.appendChild(btn)
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        if (state.open) closePanel()
+        else openPanel()
+      })
+      state.cell = btn
+    }
+    const openPanel = () => {
+      const options = findOptions()
+      if (options === null || state.open) return
+      // Hide EVERY direct child so the panel reads as a real settings page:
+      // some views (e.g. 插件) wrap their content in a container without the
+      // _section class, so matching only _section leaks that content behind.
+      for (const s of options.querySelectorAll(':scope > *')) {
+        if (s.dataset.dshThemePanel !== undefined) continue
+        s.style.display = 'none'
+      }
+      window.__dshThemeLocale = locale()
+      const sample = options.querySelector(':scope > *:not([data-dsh-theme-panel])')
+      const panel = document.createElement('div')
+      panel.dataset.dshThemePanel = 'true'
+      if (sample !== null) panel.className = sample.className
+      panel.style.cssText = 'display:flex;flex-direction:column'
+      const group = document.createElement('div')
+      group.style.cssText = 'display:flex;flex-direction:column;gap:4px;padding:0 4px'
+      const titleEl = document.createElement('div')
+      if (sample !== null) {
+        const t = sample.querySelector('[class*="_title"]')
+        if (t !== null) titleEl.className = t.className
+      }
+      titleEl.textContent = themeTitle()
+      const controls = document.createElement('div')
+      controls.dataset.dshThemeControls = 'true'
+      controls.style.cssText = 'display:flex;flex-direction:column'
+      // Fixed order via dedicated slots: wallpaper block first, then the
+      // opacity slider + cursor effects. Mounting order of the two injected
+      // controls is otherwise racy (observer-driven).
+      const wallpaperSlot = document.createElement('div')
+      wallpaperSlot.dataset.dshThemeWallpaperSlot = 'true'
+      const alphaSlot = document.createElement('div')
+      alphaSlot.dataset.dshThemeAlphaSlot = 'true'
+      controls.appendChild(wallpaperSlot)
+      controls.appendChild(alphaSlot)
+      group.appendChild(titleEl)
+      group.appendChild(controls)
+      panel.appendChild(group)
+      options.appendChild(panel)
+      state.open = true
+      setActive(true)
+    }
+    const closePanel = () => {
+      const panel = document.querySelector('[data-dsh-theme-panel]')
+      if (panel !== null) panel.remove()
+      const options = findOptions()
+      if (options !== null) {
+        for (const s of options.querySelectorAll(':scope > *')) {
+          if (s.dataset.dshThemePanel !== undefined) continue
+          s.style.display = ''
+        }
+      }
+      state.open = false
+      setActive(false)
+    }
+    // One narrow childList observer on body only: re-insert the nav cell when
+    // the settings panel is (re)built, and re-mount the theme panel after
+    // React re-renders the content area (React owns the click, so it clears
+    // our panel on the first open). A body-wide attributes observer would
+    // storm the renderer — the SPA churns class names and DOM nodes
+    // constantly.
+    const obs = new MutationObserver(() => {
+      const list = findNavList()
+      if (list === null) {
+        // Settings panel closed entirely (nav unmounted): reset so the next
+        // open starts fresh on the SPA's own view, not an auto-opened theme.
+        if (healTimer !== null) { clearTimeout(healTimer); healTimer = null }
+        state.cell = null
+        state.navList = null
+        if (state.open) state.open = false
+        return
+      }
+      if (list !== state.navList) state.navList = list
+      ensureCell()
+      if (!state.open) return
+      if (document.querySelector('[data-dsh-theme-panel]') === null) {
+        // Debounced heal: give React's render a beat before re-mounting.
+        if (healTimer !== null) clearTimeout(healTimer)
+        healTimer = setTimeout(() => {
+          healTimer = null
+          if (state.open && document.querySelector('[data-dsh-theme-panel]') === null) openPanel()
+        }, 30)
+      }
+    })
+    obs.observe(document.body, { childList: true, subtree: true })
+    ensureCell()
+    window.__dshThemeSettings = {
+      cleanup: () => { obs.disconnect(); if (healTimer !== null) clearTimeout(healTimer); closePanel() },
     }
   })()`
 }
