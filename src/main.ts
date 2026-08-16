@@ -16,7 +16,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shel
 const require_ = createRequire(import.meta.url)
 import { alphaControlScript, ambientStyleScript, glassGuardScript, glassWindowOptions, inputHistoryScript, loadGlassSettings, saveGlassSettings, terminalScript, themeScript, themeSettingsScript, wallpaperControlScript, wallpaperLayerScript, whaleSprayScript, type GlassTheme } from './glass.ts'
 import { gitStatus } from './git-status.ts'
-import { resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
+import { detectExistingServer, resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
 import { mergePlugins, pluginsCssScript, readPluginDir } from './plugins.ts'
 import { PtyRegistry } from './pty-registry.ts'
 import { repairSessionLogs } from './session-repair.ts'
@@ -526,6 +526,27 @@ async function boot(): Promise<void> {
     }
   } catch (error) {
     console.warn(`[dsh-desktop] 会话日志自动修复失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  // 检测是否已有 dsh web 实例在运行（如常驻 GUI）。两个 dsh web 共享
+  // ~/.dsh/sessions 却无跨进程写锁，并发写同一会话会产生 seq 重复/缺口并
+  // 损坏历史；复用已有实例从源头消除这类损坏。
+  try {
+    const existing = await detectExistingServer({ env: process.env })
+    if (existing !== undefined) {
+      console.log(`[dsh-desktop] 检测到已运行的 dsh web 实例 ${existing.href}，直接复用（不启动第二个实例，避免并发写入会话存储）`)
+      serverUrl = existing
+      Menu.setApplicationMenu(null)
+      createWindow(existing)
+      createTray()
+      if (pendingFocus) {
+        pendingFocus = false
+        showWindow()
+      }
+      // 复用模式没有本进程管理的 server 进程，测试钩子（依赖 server pid）不适用。
+      return
+    }
+  } catch (error) {
+    console.warn(`[dsh-desktop] 已有实例检测失败，继续自启: ${error instanceof Error ? error.message : String(error)}`)
   }
   if (launch.env.DSH_PERMISSION_MODE !== undefined && (process.env.DSH_PERMISSION_MODE === undefined || process.env.DSH_PERMISSION_MODE === '')) {
     console.warn(`[dsh-desktop] Windows has no harness confinement backend; using ${launch.env.DSH_PERMISSION_MODE} permission mode (approval prompts are disabled). Set DSH_PERMISSION_MODE to override.`)

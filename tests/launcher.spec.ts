@@ -3,6 +3,7 @@ import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 import {
   childExited,
+  detectExistingServer,
   parseReadyLine,
   resolveWebLaunch,
   waitForHttpOk,
@@ -223,5 +224,53 @@ describe('childExited', () => {
 
   it('is true once the child was killed by a signal', () => {
     expect(childExited({ exitCode: null, signalCode: 'SIGKILL' })).toBe(true)
+  })
+})
+
+describe('detectExistingServer', () => {
+  it('returns undefined when no candidate is reachable', async () => {
+    const fetchImpl = vi.fn(async () => { throw new Error('ECONNREFUSED') })
+    const url = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
+    expect(url).toBeUndefined()
+  })
+
+  it('returns undefined when a candidate answers but lacks the Harness marker', async () => {
+    const fetchImpl = vi.fn(async () => new Response('<html>other app</html>', { status: 200 }))
+    const url = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
+    expect(url).toBeUndefined()
+  })
+
+  it('reuses the default GUI port when it serves a real instance', async () => {
+    const fetchImpl = vi.fn(async () => new Response('<html><script>window.__DSH_BOOT__ = {}</script></html>', { status: 200 }))
+    const url = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
+    expect(url?.href).toBe('http://127.0.0.1:3080/')
+  })
+
+  it('honors DSH_DESKTOP_GUI_PORT', async () => {
+    const fetchImpl = vi.fn(async () => new Response('<html>window.__DSH_BOOT__</html>', { status: 200 }))
+    const url = await detectExistingServer({ env: { DSH_DESKTOP_GUI_PORT: '41501' }, fetchImpl, timeoutMs: 10 })
+    expect(url?.href).toBe('http://127.0.0.1:41501/')
+  })
+
+  it('prefers an explicit DSH_DESKTOP_GUI_URL over the default port', async () => {
+    const seen: string[] = []
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      seen.push(String(input))
+      return new Response('<html>window.__DSH_BOOT__</html>', { status: 200 })
+    })
+    const url = await detectExistingServer({ env: { DSH_DESKTOP_GUI_URL: 'http://127.0.0.1:9999/' }, fetchImpl, timeoutMs: 10 })
+    expect(url?.href).toBe('http://127.0.0.1:9999/')
+    // The explicit URL is probed first; the default port is never reached.
+    expect(seen).toEqual(['http://127.0.0.1:9999/'])
+  })
+
+  it('falls back to the default port when the explicit URL is unreachable', async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const u = String(input)
+      if (u === 'http://127.0.0.1:9999/') throw new Error('ECONNREFUSED')
+      return new Response('<html>window.__DSH_BOOT__</html>', { status: 200 })
+    })
+    const url = await detectExistingServer({ env: { DSH_DESKTOP_GUI_URL: 'http://127.0.0.1:9999/' }, fetchImpl, timeoutMs: 10 })
+    expect(url?.href).toBe('http://127.0.0.1:3080/')
   })
 })

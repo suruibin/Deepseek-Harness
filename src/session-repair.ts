@@ -163,17 +163,30 @@ function analyze(events: EventLike[]): { ok: boolean; firstGap: string; plan?: P
   return { ok: true, firstGap: findFirstGap(events), plan }
 }
 
-/** 重建: 保留的每个 seq 取"最后一次出现"的事件, 逐事件一行 (zstd 单帧), header 原样。 */
+/** 重建: 保留的每个 seq 取"最后一次出现"的事件, 逐事件一行, 每批 ~2MB 明文一个 zstd 帧, header 单独一帧。 */
 function rebuild(parsed: ParsedLog, plan: Plan): { ok: boolean; buf?: Buffer; error?: string } {
   if (parsed.header === null) return { ok: false, error: '缺少 header 行' }
   const bySeq = new Map<number, EventLike>()
   for (const ev of parsed.events) bySeq.set(ev.seq, ev)
   const chunks: Buffer[] = [zstdCompressSync(Buffer.from(JSON.stringify(parsed.header) + '\n'))]
+  const BATCH_BYTES = 2 * 1024 * 1024
+  let batch: string[] = []
+  let batchBytes = 0
+  const flush = (): void => {
+    if (batch.length === 0) return
+    chunks.push(zstdCompressSync(Buffer.from(batch.join('\n') + '\n')))
+    batch = []
+    batchBytes = 0
+  }
   for (let s = 0; s <= plan.S_last; s++) {
     const ev = bySeq.get(s)
     if (ev === undefined) return { ok: false, error: 'seq ' + s + ' 缺失' }
-    chunks.push(zstdCompressSync(Buffer.from(JSON.stringify(ev) + '\n')))
+    const line = JSON.stringify(ev)
+    batch.push(line)
+    batchBytes += line.length
+    if (batchBytes >= BATCH_BYTES) flush()
   }
+  flush()
   return { ok: true, buf: Buffer.concat(chunks) }
 }
 
@@ -194,7 +207,11 @@ function findLogs(dir: string, out: string[] = []): string[] {
   }
   for (const e of entries) {
     const p = join(dir, e.name)
-    if (e.isDirectory()) findLogs(p, out)
+    // 跳过隐藏/备份目录（如 ~/.dsh/sessions 下的 .dsh-* 或 .bak-*），它们不是会话目录
+    if (e.isDirectory()) {
+      if (e.name.startsWith('.')) continue
+      findLogs(p, out)
+    }
     else if (e.name.endsWith('.jsonl.zstd')) out.push(p)
   }
   return out

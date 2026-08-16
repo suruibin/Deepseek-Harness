@@ -234,3 +234,62 @@ export async function waitForHttpOk(url: URL, options: HttpOkOptions = {}): Prom
 export function childExited(child: Pick<ChildProcess, 'exitCode' | 'signalCode'>): boolean {
   return child.exitCode !== null || child.signalCode !== null
 }
+
+/**
+ * The HTML signature `dsh web` serves at its root: the boot payload marker.
+ * Probing this (plus a 200) distinguishes a live Harness instance from any
+ * other local server that happens to occupy the probed port.
+ */
+const DSH_ROOT_MARKER = '__DSH_BOOT__'
+
+export interface ExistingServerOptions {
+  env: NodeJS.ProcessEnv
+  /** Injectable fetch for tests; defaults to the global fetch. */
+  fetchImpl?: typeof fetch
+  /** Per-probe deadline; defaults to 3s. */
+  timeoutMs?: number
+}
+
+/**
+ * Detect whether a `dsh web` instance is already running on this machine, so
+ * the shell can reuse it instead of spawning a second one.
+ *
+ * Two `dsh web` processes share the same session storage (`~/.dsh/sessions`)
+ * with no cross-process write lock, so each assigns sequence numbers from its
+ * own in-memory snapshot of the log; concurrent appends then duplicate or gap
+ * seq values and corrupt the file ("corrupt session log: seq gap in committed
+ * region", history load fails). Reusing one instance removes that whole class
+ * of corruption at the source.
+ *
+ * Candidate order: `DSH_DESKTOP_GUI_URL` (an explicit UI address, e.g. the
+ * user's always-on GUI instance) → `DSH_DESKTOP_GUI_PORT` (default `3080`,
+ * `dsh web`'s default listen port). A candidate counts as an existing instance
+ * only when it answers HTTP 200 AND its HTML carries the Harness boot marker.
+ * @param options - env and injectable fetch.
+ * @returns the existing instance's URL, or undefined when none is reachable.
+ */
+export async function detectExistingServer(options: ExistingServerOptions): Promise<URL | undefined> {
+  const fetchImpl = options.fetchImpl ?? fetch
+  const timeoutMs = options.timeoutMs ?? 3_000
+  const candidates: string[] = []
+  const explicit = options.env.DSH_DESKTOP_GUI_URL
+  if (explicit !== undefined && explicit !== '') candidates.push(explicit)
+  candidates.push(`http://127.0.0.1:${options.env.DSH_DESKTOP_GUI_PORT ?? '3080'}/`)
+  for (const candidate of candidates) {
+    let url: URL
+    try {
+      url = new URL(candidate)
+    } catch {
+      continue
+    }
+    try {
+      const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) })
+      if (!response.ok) continue
+      const head = (await response.text()).slice(0, 4096)
+      if (head.includes(DSH_ROOT_MARKER)) return url
+    } catch {
+      // 不可达：候选端口上没有实例，继续下一个候选。
+    }
+  }
+  return undefined
+}

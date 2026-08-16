@@ -120,11 +120,25 @@ function rebuild(parsed, plan) {
   const bySeq = new Map();
   for (const ev of parsed.events) bySeq.set(ev.seq, ev);
   const chunks = [zstdCompressSync(Buffer.from(JSON.stringify(parsed.header) + "\n"))];
+  // 每批 ~2MB 明文一个 zstd 帧，避免超大会话逐事件一帧导致文件膨胀
+  const BATCH_BYTES = 2 * 1024 * 1024;
+  let batch = [];
+  let batchBytes = 0;
+  const flush = () => {
+    if (batch.length === 0) return;
+    chunks.push(zstdCompressSync(Buffer.from(batch.join("\n") + "\n")));
+    batch = [];
+    batchBytes = 0;
+  };
   for (let s = 0; s <= plan.S_last; s++) {
     const ev = bySeq.get(s);
     if (ev === undefined) return { ok: false, error: "seq " + s + " 缺失" };
-    chunks.push(zstdCompressSync(Buffer.from(JSON.stringify(ev) + "\n")));
+    const line = JSON.stringify(ev);
+    batch.push(line);
+    batchBytes += line.length;
+    if (batchBytes >= BATCH_BYTES) flush();
   }
+  flush();
   return { ok: true, buf: Buffer.concat(chunks) };
 }
 
@@ -141,7 +155,11 @@ function findLogs(dir, out = []) {
   try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
   for (const e of entries) {
     const p = join(dir, e.name);
-    if (e.isDirectory()) findLogs(p, out);
+    // 跳过隐藏/备份目录，避免把备份文件误当会话日志
+    if (e.isDirectory()) {
+      if (e.name.startsWith(".")) continue;
+      findLogs(p, out);
+    }
     else if (e.name.endsWith(".jsonl.zstd")) out.push(p);
   }
   return out;
