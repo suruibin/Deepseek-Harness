@@ -237,6 +237,13 @@ export function glassGuardScript(alpha: number): string {
     '--dsw-alias-bg-base': `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`,
     '--dsw-alias-bg-layer-1': `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`,
     '--dsw-specific-sidebar-fill': `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`,
+    // Floating docks (file panel, terminal dock) sit on the body with a
+    // frame-colored underlay behind them (see terminalScript), so both the
+    // dock body and its surroundings composite to the same depth as the
+    // center column: inside = body + underlay + panel = three a-layers ≈ 0.533,
+    // around = body + underlay = two a-layers ≈ 0.398. The dock fill is the
+    // per-layer alpha a; the underlay supplies the second layer.
+    '--dsw-specific-panel-fill': `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`,
   })
   return `(() => {
     if (window.__dshGlassGuardObserver) {
@@ -435,27 +442,15 @@ export function ambientStyleScript(): string {
     const style = document.createElement('style')
     style.id = 'dsh-dt-style'
     style.textContent = [
-      // Ambient texture: faint film grain (mix-blend overlay keeps it subtle)
-      // + a soft brand-blue glow pooling near the top, like light on glass.
-      // Both are static fixed layers — deliberately NO animation, because an
-      // animated full-canvas layer pegs the renderer at ~100% CPU under
-      // software rendering (see hero below).
-      'html::after {',
-      "  content: '';",
-      '  position: fixed; inset: 0;',
-      '  z-index: 2147483001;',
-      '  pointer-events: none;',
-      "  background-image: url(\\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E\\");",
-      '  opacity: 0.025;',
-      '  mix-blend-mode: overlay;',
-      '}',
-      'html::before {',
-      "  content: '';",
-      '  position: fixed; inset: 0;',
-      '  z-index: 2147483000;',
-      '  pointer-events: none;',
-      '  background: radial-gradient(120% 70% at 50% -8%, rgba(65, 118, 230, 0.16), transparent 62%);',
-      '}',
+      // Ambient texture + glow layers are intentionally GONE: a full-canvas
+      // fixed layer with mix-blend-mode (film grain) or a radial tint
+      // (html::before blue glow pooling near the top) makes the background
+      // visibly uneven — the glow only tints the upper half, so the center
+      // input/output area reads as "half the background has a different
+      // transparency" (verified fullscreen: upper region B-channel +6-9 vs
+      // lower). Both also cost render time at fullscreen sizes (software
+      // rendering pegs the renderer; see note below). Removed for an even,
+      // cheap glass backdrop.
       // Slim unobtrusive scrollbars that read as part of the glass theme.
       '*::-webkit-scrollbar { width: 8px; height: 8px; }',
       '*::-webkit-scrollbar-track { background: transparent; }',
@@ -463,15 +458,28 @@ export function ambientStyleScript(): string {
       '*::-webkit-scrollbar-thumb:hover { background: rgba(128, 132, 142, 0.62); border: 2px solid transparent; background-clip: content-box; }',
       '* { scrollbar-width: thin; scrollbar-color: rgba(128, 132, 142, 0.38) transparent; }',
       // Sidebar as a floating glass card: drop the hard divider, round all
-      // corners, lift it off the canvas with margin and a soft shadow.
+      // corners, lift it off the canvas with margin. NO drop shadow: its
+      // rightward spread lands on the center column's left edge across the
+      // 4px gap and renders as a dark gradient band on it (same class of
+      // artifact as the file panel's shadow).
       '[class*=\"_sidebarCol\"] {',
       '  border-right: none !important;',
       '  border-radius: 16px !important;',
       '  margin: 8px 4px 8px 8px !important;',
-      '  box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.5);',
+      // Kill any drop shadow the web profile's dsh-glass-theme plugin still
+      // paints (its GLASS_CSS was forked before this fix): the rightward
+      // spread lands on the center column's left edge across the 4px gap.
+      '  box-shadow: none !important;',
       '}',
       '[class*=\"_sidebarCol\"] [class*=\"_root\"] {',
       '  border-radius: 12px !important;',
+      // Three-way depth match: the sidebar column stacks body + frame +
+      // sidebarCol + sidebarRoot (4 translucent layers ≈ 0.637), which renders
+      // visibly darker than the center column (3 layers ≈ 0.533). Dropping the
+      // inner root's fill leaves body + frame + sidebarCol (3 layers), the
+      // same depth as the center column and the file panel (verified on
+      // screen). The root's own content keeps its background.
+      '  background: transparent !important;',
       '}',
       // Center column (conversation area): same floating glass card as the
       // sidebar — rounded on all four corners, lifted with margin. NO drop
@@ -487,11 +495,15 @@ export function ambientStyleScript(): string {
       '}',
       // Details panel (对话 / 轨迹 / Session log): same floating-card look,
       // compact height so it does not butt against the window top edge.
+      // NO drop shadow: its leftward spread lands on the center column's
+      // right edge and renders as a dark band on it.
       '[class*=\"_detailsCol\"] {',
       '  border-left: none !important;',
       '  border-radius: 16px !important;',
       '  margin: 16px 8px 8px 0 !important;',
-      '  box-shadow: -8px 0 24px -12px rgba(0, 0, 0, 0.35);',
+      // Same defensive kill as the sidebar: the plugin fork still paints a
+      // -8px 0 shadow whose leftward spread lands on the center's right edge.
+      '  box-shadow: none !important;',
       '  height: 62% !important;',
       '  align-self: start !important;',
       '}',
@@ -558,6 +570,31 @@ export function ambientStyleScript(): string {
       // floating glass panes the soft shadow reads as a stray dark outline
       // around the input box and clashes with the flat glass cards.
       '[class*=\"uV2eYG_card\"] { box-shadow: none !important; }',
+      // Composer input card fill: DSH paints it with --dsw-specific-input-major
+      // (an OPAQUE deep blue-gray), which reads as a solid slab floating on
+      // the translucent glass canvas — jarring next to the semi-transparent
+      // center column. Repaint it with a slightly deeper frosted glass so the
+      // input surface is clearly visible as a distinct frosted pane (alpha
+      // 0.35 over the canvas, not the barely-there 0.224), while text/buttons
+      // keep their own opaque fills for readability. The frosted (blur)
+      // effect applies ONLY inside the card's own border box — the row around
+      // it keeps the plain canvas background.
+      '[class*=\"uV2eYG_card\"] { background-color: rgba(15,17,23,0.35) !important; backdrop-filter: blur(24px) saturate(140%) !important; -webkit-backdrop-filter: blur(24px) saturate(140%) !important; }',
+      // Task progress strip above the composer (lXshSW_root): DSH paints it
+      // with --dsw-specific-tip, an OPAQUE neutral (rgb(53,54,56)) that reads
+      // as a solid slab on the glass canvas. Repaint it with the same frosted
+      // glass as the input card (alpha 0.35 + blur, inside the strip's own box
+      // only) so the two read as one family above the input.
+      '[class*=\"lXshSW_root\"] { background: rgba(15,17,23,0.35) !important; backdrop-filter: blur(24px) saturate(140%) !important; -webkit-backdrop-filter: blur(24px) saturate(140%) !important; }',
+      // Tool-call output (Bash etc.) code blocks: DSH fills them with
+      // --dsw-alias-markdown-code-block (opaque) and the banner with
+      // --dsw-alias-markdown-code-block-banner (opaque). Repaint both with the
+      // glass alpha so the popped-out command/output frame matches the panes.
+      // The banner sits on the block, so give it one extra translucent layer
+      // to stay slightly distinct while still reading as glass.
+      '[class*=\"_block_178r4_4\"], [class*=\"_block_10eou_7\"], [class*=\"_block_biesw_7\"], [class*=\"_block_srovd_7\"], [class*=\"_block_s66q0_7\"] { background: var(--dsw-specific-panel-fill, rgba(15,17,23,0.224)) !important; }',
+      '[class*=\"_bannerWrap_178r4_21\"] { background-color: var(--dsw-specific-panel-fill, rgba(15,17,23,0.224)) !important; }',
+      '[class*=\"_banner_178r4_21\"], [class*=\"_banner_biesw_21\"], [class*=\"_header_10eou_38\"] { background-color: var(--dsw-specific-panel-fill, rgba(15,17,23,0.224)) !important; }',
       // Sidebar list bottom fade: its gradient endpoint follows
       // --dsw-alias-bg-base, which the glass tint makes translucent, so the
       // fade stacks a second translucent layer on the sidebar's own
@@ -1383,7 +1420,6 @@ export function terminalScript(): string {
       if (saved && typeof saved.size === 'number' && saved.size >= 8 && saved.size <= 32) fonts.size = saved.size
     } catch {}
 
-    const panelBg = readToken('--dsw-alias-bg-base', '#111114')
     const mkBtn = (label, title, css) => {
       const b = document.createElement('button')
       b.type = 'button'
@@ -1467,12 +1503,26 @@ export function terminalScript(): string {
 
     // ── Terminal dock (bottom bar right of the conversation sidebar) ──
     const DOCK_H = 340
+    // Underlay for the terminal dock: a frame-colored layer behind the dock
+    // (z-index 9997, one below the dock). It makes the dock composite like the
+    // center column: inside = body + underlay + dock (three a-layers ≈ 0.533),
+    // around = body + underlay (two a-layers ≈ 0.398). Without it the dock's
+    // translucent fill over bare body would read lighter than the panes.
+    const termUnderlay = document.createElement('div')
+    termUnderlay.id = 'dsh-term-underlay'
+    termUnderlay.style.cssText = [
+      'position:fixed', 'left:' + sidebarRight + 'px', 'right:0', 'bottom:0', 'height:' + DOCK_H + 'px', 'z-index:9997',
+      'display:none', 'background:var(--dsw-alias-bg-layer-1, rgba(15,17,23,0.224))',
+    ].join(';')
+    document.body.appendChild(termUnderlay)
     const termDock = document.createElement('div')
     termDock.id = 'dsh-terminal-dock'
     termDock.style.cssText = [
       'position:fixed', 'left:' + sidebarRight + 'px', 'right:0', 'bottom:0', 'height:' + DOCK_H + 'px', 'z-index:9998',
-      'display:none', 'background:' + panelBg, 'box-sizing:border-box',
-      'backdrop-filter:blur(24px) saturate(140%)', '-webkit-backdrop-filter:blur(24px) saturate(140%)',
+      'display:none', 'background:var(--dsw-specific-panel-fill, rgba(15,17,23,0.224))', 'box-sizing:border-box',
+      // NO backdrop-filter: same rationale as the file panel — the underlay
+      // gives the dock the center column's depth; a blur would read as a
+      // different transparency and seam against the un-blurred gutters.
       'border-top:1px solid rgba(65,118,230,0.22)',
       'flex-direction:column', 'font-size:13px',
     ].join(';')
@@ -1480,6 +1530,7 @@ export function terminalScript(): string {
 
     const termOpen = () => {
       termDock.style.display = 'flex'
+      termUnderlay.style.display = 'block'
       // Only the terminal toggle hides while the dock is open (it sits at the
       // bottom-left, inside the dock's area, and the dock has its own
       // collapse button). The files toggle stays visible top-right — the
@@ -1502,6 +1553,7 @@ export function terminalScript(): string {
     }
     const termClose = () => {
       termDock.style.display = 'none'
+      termUnderlay.style.display = 'none'
       btnTerm.style.display = 'flex'
       const center = document.querySelector('[class*="_centerCol"]')
       if (center !== null) center.style.height = ''
@@ -1905,16 +1957,65 @@ export function terminalScript(): string {
     }
 
     // ── File panel (right side, squeezes the app, drag-resizable) ──
+    // The panel floats FILES_RIGHT from the viewport edge. While it is open
+    // the center column keeps the same gap from the panel as the sidebar
+    // keeps from the center column: the sidebar's CSS margin-right is 4px, so
+    // we set the center column's margin-right to the same 4px (FILES_GAP) and
+    // push the app body right up to the panel's left edge. The two panes then
+    // read as one symmetric three-column layout with equal 4px gutters.
+    const FILES_RIGHT = 8 // matches the right: offset in the cssText below
+    const FILES_GAP = 4 // px gutter between center column and panel (== sidebar margin-right)
+    // Underlay: a frame-colored layer (--dsw-alias-bg-layer-1 = per-layer
+    // alpha a) covering the panel's footprint plus its surroundings. It makes
+    // the panel composite to the SAME depth as the center column: inside =
+    // body + underlay + panel (three a-layers ≈ 0.533) and around = body +
+    // underlay (two a-layers ≈ 0.398), matching the sidebar/center gutters.
+    // Without it the panel floats on bare body (one layer) and its rounded
+    // corners look more transparent than the neighboring panels.
+    const filesUnderlay = document.createElement('div')
+    filesUnderlay.id = 'dsh-files-underlay'
+    filesUnderlay.style.cssText = [
+      'position:fixed', 'top:0', 'right:0', 'bottom:0', 'z-index:9996',
+      'display:none', 'background:var(--dsw-alias-bg-layer-1, rgba(15,17,23,0.224))',
+    ].join(';')
+    document.body.appendChild(filesUnderlay)
     const filesPanel = document.createElement('div')
     filesPanel.id = 'dsh-files-panel'
     filesPanel.style.cssText = [
-      'position:fixed', 'top:0', 'right:0', 'bottom:0', 'width:340px', 'z-index:9997',
-      'display:none', 'background:' + panelBg, 'box-sizing:border-box',
-      'backdrop-filter:blur(24px) saturate(140%)', '-webkit-backdrop-filter:blur(24px) saturate(140%)',
-      'border-left:1px solid rgba(65,118,230,0.22)',
+      'position:fixed', 'top:8px', 'right:' + FILES_RIGHT + 'px', 'bottom:8px', 'width:340px', 'z-index:9997',
+      'display:none', 'background:var(--dsw-specific-panel-fill, rgba(15,17,23,0.224))', 'box-sizing:border-box',
+      // NO backdrop-filter: the underlay already supplies the second glass
+      // layer, so the panel composites to the same depth as the center column
+      // (three a-layers ≈ 0.533) and its surroundings to 0.398. A blur here
+      // would (a) make the panel read as a different, "frostier" transparency
+      // than the center column/input bar, and (b) at its left edge create a
+      // visible vertical seam against the un-blurred gutter (verified on
+      // screen: the seam spans the header height and disappears without blur).
+      'border-radius:16px',
+      // NO box-shadow: the panel floats a few px right of the center column
+      // (FILES_GAP), and a shadow spreading leftward toward that gutter would
+      // render as a dark vertical band on the main pane (verified on screen).
       'flex-direction:column', 'font-size:13px', 'padding:6px 8px', 'gap:6px',
     ].join(';')
     document.body.appendChild(filesPanel)
+    // Keep the underlay's left edge flush with the PANEL's left edge (not the
+    // gutter): the frame layer already covers the gutter (body + frame = two
+    // a-layers ≈ 0.398, the same as the sidebar/center surroundings), so the
+    // 4px gap stays visible as a lighter seam. Extending the underlay into the
+    // gutter would stack a third layer there and visually fill the gap.
+    const syncFilesUnderlay = () => {
+      const r = filesPanel.getBoundingClientRect()
+      filesUnderlay.style.left = r.left + 'px'
+    }
+    // Window resize (e.g. Win+F fullscreen) changes the panel's left edge
+    // (it is anchored to the right viewport edge), so the underlay must
+    // follow. Without this the underlay stays at the pre-resize left and
+    // leaves a wide two-layer band between it and the panel — visibly lighter
+    // than the center column's three layers.
+    const onFilesResize = () => {
+      if (filesPanel.style.display === 'flex') syncFilesUnderlay()
+    }
+    window.addEventListener('resize', onFilesResize)
 
     // The DSH sidebar groups sessions under workspace headers; the header
     // (first child) of the group containing the currently selected session
@@ -1935,8 +2036,27 @@ export function terminalScript(): string {
     }
     const filesOpen = () => {
       filesPanel.style.display = 'flex'
+      filesUnderlay.style.display = 'block'
+      syncFilesUnderlay()
       btnFiles.style.display = 'none' // the open panel occupies that corner
-      document.body.style.paddingRight = filesPanel.getBoundingClientRect().width + 'px'
+      // Squeeze the app up to the panel's left edge (right offset + width),
+      // then give the center column the same 4px right margin the sidebar
+      // carries (FILES_GAP), so the two gutters match. The center column keeps
+      // its own rounded corners; the panel is rounded on all four too.
+      document.body.style.paddingRight = (FILES_RIGHT + filesPanel.getBoundingClientRect().width) + 'px'
+      const col = document.querySelector('[class*="_centerCol"]')
+      // The ambient glass CSS pins the center column's margin with !important
+      // (margin: 8px 8px 8px 0), so a plain assignment cannot override it.
+      if (col !== null) col.style.setProperty('margin-right', FILES_GAP + 'px', 'important')
+      // The center column's scrollbar sits right at its own right edge; hide
+      // it while the panel is open so it does not read as a divider next to
+      // the floating panel (wheel scrolling still works). Restored on close.
+      if (document.getElementById('dsh-files-scroll-hide') === null) {
+        const s = document.createElement('style')
+        s.id = 'dsh-files-scroll-hide'
+        s.textContent = '[class*="_centerCol"] *::-webkit-scrollbar { display: none !important; } [class*="_centerCol"] * { scrollbar-width: none !important; }'
+        document.head.appendChild(s)
+      }
       // Open at the CURRENT session's workspace directory (the DSH sidebar
       // groups sessions by workspace: the selected row's groupSection header
       // is the workspace title, resolved to a real path in the main process).
@@ -1953,11 +2073,19 @@ export function terminalScript(): string {
     }
     const filesClose = () => {
       filesPanel.style.display = 'none'
+      filesUnderlay.style.display = 'none'
       btnFiles.style.display = 'flex' // restore the toggle once closed
       document.body.style.paddingRight = ''
+      const col = document.querySelector('[class*="_centerCol"]')
+      if (col !== null) {
+        col.style.removeProperty('border-radius')
+        col.style.removeProperty('margin-right')
+      }
+      const s = document.getElementById('dsh-files-scroll-hide')
+      if (s !== null) s.remove()
     }
     const syncFilesBottom = () => {
-      filesPanel.style.bottom = termDock.style.display === 'flex' ? DOCK_H + 'px' : '0'
+      filesPanel.style.bottom = termDock.style.display === 'flex' ? (DOCK_H + 8) + 'px' : '8px'
     }
 
     // Drag the panel's left edge to resize; the app squeeze follows.
@@ -1971,7 +2099,8 @@ export function terminalScript(): string {
       const move = (ev) => {
         const w = Math.min(640, Math.max(240, startW + startX - ev.clientX))
         filesPanel.style.width = w + 'px'
-        document.body.style.paddingRight = w + 'px'
+        document.body.style.paddingRight = (FILES_RIGHT + w) + 'px'
+        syncFilesUnderlay()
       }
       const up = () => {
         window.removeEventListener('pointermove', move)
@@ -2295,7 +2424,10 @@ export function terminalScript(): string {
         document.getElementById('dsh-sesslog-style')?.remove()
         document.body.style.paddingRight = ''
         const center = document.querySelector('[class*="_centerCol"]')
-        if (center !== null) center.style.height = ''
+        if (center !== null) {
+          center.style.height = ''
+          center.style.removeProperty('margin-right')
+        }
         for (const tab of [...tabs]) {
           window.dshDesktop.terminal.close(tab.id)
           if (tab.resizeObs !== null) tab.resizeObs.disconnect()
@@ -2303,7 +2435,10 @@ export function terminalScript(): string {
         }
         btnTerm.remove()
         btnFiles.remove()
+        termUnderlay.remove()
         termDock.remove()
+        window.removeEventListener('resize', onFilesResize)
+        filesUnderlay.remove()
         filesPanel.remove()
       },
     }
