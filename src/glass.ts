@@ -627,7 +627,7 @@ export function ambientStyleScript(): string {
       // Clear it; the column's own variable background is the single glass
       // layer, matching the sidebar.
       '[class*=\"_centerCol\"] [class*=\"wSkVaW_root\"] { background-color: transparent !important; }',
-      '[class*=\"_sidebarCol\"] { position: relative !important; z-index: 1 !important; background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; }',
+      '[class*=\"_sidebarCol\"] { position: relative !important; z-index: 1 !important; background-color: var(--dsh-glass-sidebar-bg, rgba(15,17,23,0.35)) !important; }',
       '[class*=\"_sidebarCol\"]::before { content: \"\" !important; position: absolute !important; inset: 0 !important; border-radius: inherit !important; pointer-events: none !important; z-index: -1 !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // Hosted settings panel (VOzbGW_panel, tagged data-dsh-settings-panel by
       // themeSettingsScript): DSH paints it with an OPAQUE blue-gray
@@ -3043,7 +3043,7 @@ export function glassControlsScript(): string {
       window.__dshGlassControlObserver.disconnect()
       window.__dshGlassControlObserver = undefined
     }
-    const KEYS = { main: 'dsh-desktop-glass-main', settings: 'dsh-desktop-glass-settings', input: 'dsh-desktop-glass-input' }
+    const KEYS = { main: 'dsh-desktop-glass-main', settings: 'dsh-desktop-glass-settings', input: 'dsh-desktop-glass-input', sidebar: 'dsh-desktop-glass-sidebar' }
     const read = (key, fallback) => {
       try {
         const raw = localStorage.getItem(key)
@@ -3063,6 +3063,8 @@ export function glassControlsScript(): string {
     // (rgb(39,46,62)) with a user alpha 20..100% (100 = the opaque look the
     // user asked for).
     let inputVal = Math.max(0, Math.min(100, read(KEYS.input, 100)))
+    // The sidebar has its own glass strength, independent of the main surface.
+    let sidebarVal = Math.max(0, Math.min(60, read(KEYS.sidebar, 35)))
     // One style node carries the glass variables; ambientStyleScript's
     // rules reference them with the same values as defaults, so this node only
     // matters once the user deviates from the default.
@@ -3080,6 +3082,7 @@ export function glassControlsScript(): string {
         '--dsh-glass-settings-bg: ' + a(settingsVal) + '; ' +
         '--dsh-glass-settings-blur: 24px; ' +
         '--dsh-glass-input-bg: rgba(39,46,62,' + (inputVal / 100).toFixed(3) + '); ' +
+        '--dsh-glass-sidebar-bg: ' + a(sidebarVal) + '; ' +
       '}'
     }
     const mount = () => {
@@ -3092,6 +3095,7 @@ export function glassControlsScript(): string {
         main: zh ? '主界面' : 'Main surface',
         settings: zh ? '设置界面' : 'Settings surface',
         input: zh ? '输入框' : 'Input surface',
+        sidebar: zh ? '侧边栏' : 'Sidebar',
       }
       const existing = document.querySelector('[data-dsh-glass-controls]')
       if (existing !== null) {
@@ -3103,6 +3107,7 @@ export function glassControlsScript(): string {
         sync('[data-dsh-glass-main-label]', labels.main)
         sync('[data-dsh-glass-settings-label]', labels.settings)
         sync('[data-dsh-glass-input-label]', labels.input)
+        sync('[data-dsh-glass-sidebar-label]', labels.sidebar)
         return
       }
       const control = document.createElement('div')
@@ -3127,6 +3132,11 @@ export function glassControlsScript(): string {
               '<input type="range" min="0" max="100" step="1" data-dsh-glass-input style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-input-fill,100%),rgba(65,118,230,0.22) var(--dsh-input-fill,100%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
               '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-input-val></span>' +
             '</div>' +
+            '<div style="display:flex;align-items:center;gap:12px">' +
+              '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-glass-sidebar-label></span>' +
+              '<input type="range" min="0" max="60" step="1" data-dsh-glass-sidebar style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-sidebar-fill,35%),rgba(65,118,230,0.22) var(--dsh-sidebar-fill,35%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
+              '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-sidebar-val></span>' +
+            '</div>' +
           '</div>' +
         '</div>' +
         '<style>' +
@@ -3145,13 +3155,16 @@ export function glassControlsScript(): string {
       sync('[data-dsh-glass-main-label]', labels.main)
       sync('[data-dsh-glass-settings-label]', labels.settings)
       sync('[data-dsh-glass-input-label]', labels.input)
+      sync('[data-dsh-glass-sidebar-label]', labels.sidebar)
       const mainSlider = control.querySelector('[data-dsh-glass-main]')
       const settingsSlider = control.querySelector('[data-dsh-glass-settings]')
       const inputSlider = control.querySelector('[data-dsh-glass-input]')
+      const sidebarSlider = control.querySelector('[data-dsh-glass-sidebar]')
       const mainValEl = control.querySelector('[data-dsh-glass-main-val]')
       const settingsValEl = control.querySelector('[data-dsh-glass-settings-val]')
       const inputValEl = control.querySelector('[data-dsh-glass-input-val]')
-      if (mainSlider === null || settingsSlider === null || inputSlider === null || mainValEl === null || settingsValEl === null || inputValEl === null) return
+      const sidebarValEl = control.querySelector('[data-dsh-glass-sidebar-val]')
+      if (mainSlider === null || settingsSlider === null || inputSlider === null || sidebarSlider === null || mainValEl === null || settingsValEl === null || inputValEl === null || sidebarValEl === null) return
       const renderMain = () => {
         mainSlider.value = String(mainVal)
         mainValEl.textContent = mainVal + '%'
@@ -3166,6 +3179,11 @@ export function glassControlsScript(): string {
         inputSlider.value = String(inputVal)
         inputValEl.textContent = inputVal + '%'
         inputSlider.style.setProperty('--dsh-input-fill', ((inputVal) / 100 * 100).toFixed(1) + '%')
+      }
+      const renderSidebar = () => {
+        sidebarSlider.value = String(sidebarVal)
+        sidebarValEl.textContent = sidebarVal + '%'
+        sidebarSlider.style.setProperty('--dsh-sidebar-fill', ((sidebarVal) / 60 * 100).toFixed(1) + '%')
       }
       mainSlider.addEventListener('input', () => {
         mainVal = Math.round(Number(mainSlider.value))
@@ -3185,9 +3203,16 @@ export function glassControlsScript(): string {
         renderInput()
         applyVars()
       })
+      sidebarSlider.addEventListener('input', () => {
+        sidebarVal = Math.round(Number(sidebarSlider.value))
+        write(KEYS.sidebar, sidebarVal)
+        renderSidebar()
+        applyVars()
+      })
       renderMain()
       renderSettings()
       renderInput()
+      renderSidebar()
       const holder = panel.querySelector('[data-dsh-theme-glass-slot]') || panel
       holder.appendChild(control)
     }
