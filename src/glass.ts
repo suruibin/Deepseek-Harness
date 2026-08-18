@@ -578,13 +578,6 @@ export function ambientStyleScript(): string {
       // look the user asked for, 20..99% = frosted glass with blur). The blur
       // rides the same radius as the other glass surfaces.
       '[class*=\"uV2eYG_card\"] { background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
-      // The composer's STICKY SEAT (wSkVaW_composerSeat) floats over the
-      // message scroll area, so scrolled messages pass BEHIND the input box
-      // and show through a translucent (frosted) input surface while
-      // scrolling. Give the seat an OPAQUE background (same blue-gray as the
-      // input card) so the messages behind it are never visible; the input
-      // card's own frosted glass then renders on top of that solid base.
-      '[class*=\"wSkVaW_composerSeat\"] { background-color: rgb(39,46,62) !important; }',
       // Task progress strip above the composer (lXshSW_root): DSH paints it
       // with --dsw-specific-tip, an OPAQUE neutral (rgb(53,54,56)) that reads
       // as a solid slab on the glass canvas. Repaint it with the same frosted
@@ -852,6 +845,7 @@ export function ambientStyleScript(): string {
       applyRailFish()
       applySidebarIcons()
       stripComposerTitles()
+      keepComposerFloating()
     }
     const obs = new MutationObserver(() => {
       // Brand (re)appearance is time-critical: rebuild its gradient structure
@@ -882,6 +876,41 @@ export function ambientStyleScript(): string {
     applyRailFish()
     applySidebarIcons()
     stripComposerTitles()
+
+    // ── Float the composer OUT of the message scroll area ──
+    // DSH lays the composer out as a STICKY child of the message scroll body,
+    // so scrolled messages pass BEHIND the input box and show through a
+    // translucent (frosted) input surface. Move the seat up to the center
+    // column as an ABSOLUTE element pinned to its bottom: the seat is no
+    // longer part of the scrollable content, the scroll area is shrunk to end
+    // above it, and messages can never appear behind the input box — the
+    // input keeps its true frosted-glass translucency. The center column's
+    // backdrop-filter makes it the containing block, so the seat follows the
+    // column's bottom (terminal dock open, window resize). React re-renders
+    // put the seat back into the scroll body; obsTick (rAF-throttled) moves
+    // it again, and the same pass re-pins the scroll height.
+    const keepComposerFloating = () => {
+      const center = document.querySelector('[class*="_centerCol"]')
+      const seat = document.querySelector('[class*="wSkVaW_composerSeat"]')
+      const scroll = document.querySelector('[class*="_centerCol"] [class*="_scrollBody"], [class*="_centerCol"] [class*="_scroll"]')
+      if (center === null || seat === null || scroll === null) return
+      if (seat.parentElement !== center) center.appendChild(seat)
+      seat.style.position = 'absolute'
+      seat.style.left = '0'
+      seat.style.right = '0'
+      seat.style.bottom = '0'
+      seat.style.margin = '0'
+      seat.style.zIndex = '100'
+      const sr = scroll.getBoundingClientRect()
+      const st = seat.getBoundingClientRect()
+      if (sr.top > 0 && st.top > 0) {
+        const h = Math.max(80, Math.round(st.top - sr.top - 8))
+        scroll.style.setProperty('flex', '0 0 auto', 'important')
+        scroll.style.setProperty('height', h + 'px', 'important')
+        scroll.style.setProperty('min-height', h + 'px', 'important')
+      }
+    }
+    keepComposerFloating()
   })()`
 }
 
