@@ -578,6 +578,13 @@ export function ambientStyleScript(): string {
       // look the user asked for, 20..99% = frosted glass with blur). The blur
       // rides the same radius as the other glass surfaces.
       '[class*=\"uV2eYG_card\"] { background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      // The composer's STICKY SEAT (wSkVaW_composerSeat) floats over the
+      // message scroll area, so scrolled messages pass BEHIND the input box
+      // and show through a translucent (frosted) input surface while
+      // scrolling. Give the seat an OPAQUE background (same blue-gray as the
+      // input card) so the messages behind it are never visible; the input
+      // card's own frosted glass then renders on top of that solid base.
+      '[class*=\"wSkVaW_composerSeat\"] { background-color: rgb(39,46,62) !important; }',
       // Task progress strip above the composer (lXshSW_root): DSH paints it
       // with --dsw-specific-tip, an OPAQUE neutral (rgb(53,54,56)) that reads
       // as a solid slab on the glass canvas. Repaint it with the same frosted
