@@ -621,7 +621,7 @@ export function ambientStyleScript(): string {
       // above the settings button), yet a pseudo-element is not a DOM
       // ancestor, so the overlay's containing block stays the viewport.
       '[class*=\"_centerCol\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
-      '[class*=\"_sidebarCol\"] { position: relative !important; z-index: 0 !important; background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; }',
+      '[class*=\"_sidebarCol\"] { position: relative !important; z-index: 1 !important; background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; }',
       '[class*=\"_sidebarCol\"]::before { content: \"\" !important; position: absolute !important; inset: 0 !important; border-radius: inherit !important; pointer-events: none !important; z-index: -1 !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // Hosted settings panel (VOzbGW_panel, tagged data-dsh-settings-panel by
       // themeSettingsScript): DSH paints it with an OPAQUE blue-gray
