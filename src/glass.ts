@@ -628,6 +628,13 @@ export function ambientStyleScript(): string {
       // layer, matching the sidebar.
       '[class*=\"_centerCol\"] [class*=\"wSkVaW_root\"] { background-color: transparent !important; }',
       '[class*=\"_sidebarCol\"] { position: relative !important; z-index: 1 !important; background-color: var(--dsh-glass-sidebar-bg, rgba(15,17,23,0.35)) !important; }',
+      // The composer stats line under the input (FJxK0a_root: "4 轮 · 1294 步|
+      // LLM 160m …| 输入 358M tok · 输出 …"): SPA renders it nowrap inside an
+      // overflow:hidden box, so at narrow widths the tail ("输出 … tok") is
+      // clipped. Allow wrapping and let the composer root grow so the whole
+      // line is always visible.
+      '[class*=\"FJxK0a_root\"] { white-space: normal !important; overflow: visible !important; height: auto !important; }',
+      '[class*=\"uV2eYG_root\"] { height: auto !important; min-height: 94px !important; }',
       '[class*=\"_sidebarCol\"]::before { content: \"\" !important; position: absolute !important; inset: 0 !important; border-radius: inherit !important; pointer-events: none !important; z-index: -1 !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // Hosted settings panel (VOzbGW_panel, tagged data-dsh-settings-panel by
       // themeSettingsScript): DSH paints it with an OPAQUE blue-gray
