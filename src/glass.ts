@@ -3050,12 +3050,12 @@ export function glassControlsScript(): string {
     const write = (key, value) => {
       try { localStorage.setItem(key, String(value)) } catch {}
     }
-    let mainVal = Math.max(10, Math.min(60, read(KEYS.main, 35)))
+    let mainVal = Math.max(0, Math.min(60, read(KEYS.main, 35)))
     let settingsVal = Math.max(20, Math.min(60, read(KEYS.settings, 35)))
     // The input card's glass is independent: it rides the Full access blue-gray
     // (rgb(39,46,62)) with a user alpha 20..100% (100 = the opaque look the
     // user asked for).
-    let inputVal = Math.max(10, Math.min(100, read(KEYS.input, 100)))
+    let inputVal = Math.max(0, Math.min(100, read(KEYS.input, 100)))
     // One style node carries the glass variables; ambientStyleScript's
     // rules reference them with the same values as defaults, so this node only
     // matters once the user deviates from the default.
@@ -3107,7 +3107,7 @@ export function glassControlsScript(): string {
           '<div style="display:flex;flex-direction:column;gap:4px">' +
             '<div style="display:flex;align-items:center;gap:12px">' +
               '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-glass-main-label></span>' +
-              '<input type="range" min="10" max="60" step="1" data-dsh-glass-main style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-main-fill,35%),rgba(65,118,230,0.22) var(--dsh-main-fill,35%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
+              '<input type="range" min="0" max="60" step="1" data-dsh-glass-main style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-main-fill,35%),rgba(65,118,230,0.22) var(--dsh-main-fill,35%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
               '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-main-val></span>' +
             '</div>' +
             '<div style="display:flex;align-items:center;gap:12px">' +
@@ -3117,7 +3117,7 @@ export function glassControlsScript(): string {
             '</div>' +
             '<div style="display:flex;align-items:center;gap:12px">' +
               '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-glass-input-label></span>' +
-              '<input type="range" min="10" max="100" step="1" data-dsh-glass-input style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-input-fill,100%),rgba(65,118,230,0.22) var(--dsh-input-fill,100%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
+              '<input type="range" min="0" max="100" step="1" data-dsh-glass-input style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-input-fill,100%),rgba(65,118,230,0.22) var(--dsh-input-fill,100%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
               '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-input-val></span>' +
             '</div>' +
           '</div>' +
@@ -3148,7 +3148,7 @@ export function glassControlsScript(): string {
       const renderMain = () => {
         mainSlider.value = String(mainVal)
         mainValEl.textContent = mainVal + '%'
-        mainSlider.style.setProperty('--dsh-main-fill', ((mainVal - 10) / 50 * 100).toFixed(1) + '%')
+        mainSlider.style.setProperty('--dsh-main-fill', ((mainVal) / 60 * 100).toFixed(1) + '%')
       }
       const renderSettings = () => {
         settingsSlider.value = String(settingsVal)
@@ -3158,7 +3158,7 @@ export function glassControlsScript(): string {
       const renderInput = () => {
         inputSlider.value = String(inputVal)
         inputValEl.textContent = inputVal + '%'
-        inputSlider.style.setProperty('--dsh-input-fill', ((inputVal - 10) / 90 * 100).toFixed(1) + '%')
+        inputSlider.style.setProperty('--dsh-input-fill', ((inputVal) / 100 * 100).toFixed(1) + '%')
       }
       mainSlider.addEventListener('input', () => {
         mainVal = Math.round(Number(mainSlider.value))
