@@ -868,7 +868,16 @@ if (!app.requestSingleInstanceLock()) {
   // Wallpaper IPC (preload bridge): pick (system file dialog + store under
   // userData), clear, and get (current data URL). The renderer side is
   // hostile surface, so the file path never comes from it — the dialog is
-  // owned by the main process.
+  // owned by the main process. `dsh:wallpaper-apply` is the folder-browser
+  // path: the renderer supplies an absolute path, but it is only honored for
+  // files the main process itself listed (the folder pick dialog below).
+  const applyWallpaperFile = (srcPath: string): { file: string; url: string; srcPath: string } | { error: string } => {
+    const stored = storeWallpaper(userData, srcPath)
+    if ('error' in stored) return stored
+    wallpaperFile = stored.file
+    saveGlass()
+    return { file: stored.file, url: stored.url, srcPath }
+  }
   ipcMain.handle('dsh:wallpaper-pick', async () => {
     const options = {
       title: 'Select wallpaper',
@@ -879,11 +888,55 @@ if (!app.requestSingleInstanceLock()) {
       ? await dialog.showOpenDialog(mainWindow, options)
       : await dialog.showOpenDialog(options)
     if (result.canceled || result.filePaths.length === 0) return { canceled: true }
-    const stored = storeWallpaper(userData, result.filePaths[0]!)
-    if ('error' in stored) return stored
-    wallpaperFile = stored.file
-    saveGlass()
-    return { url: stored.url, file: stored.file }
+    return applyWallpaperFile(result.filePaths[0]!)
+  })
+  // Folder picker for the wallpaper thumbnail grid: choose a directory and
+  // list its images (png/jpg/jpeg/webp/gif/bmp — the formats nativeImage can
+  // decode into thumbnails; svg is excluded because it cannot be rasterized
+  // this way). The returned paths are the only ones `dsh:wallpaper-apply`
+  // will accept later, keeping the renderer's path surface bounded.
+  ipcMain.handle('dsh:wallpaper-folder-pick', async () => {
+    const options = {
+      title: 'Select wallpaper folder',
+      properties: ['openDirectory' as const],
+    }
+    const result = mainWindow !== undefined
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options)
+    if (result.canceled || result.filePaths.length === 0) return { canceled: true }
+    const dir = result.filePaths[0]!
+    try {
+      const { readdir } = await import('node:fs/promises')
+      const { extname } = await import('node:path')
+      const IMG_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'])
+      const entries = (await readdir(dir))
+        .filter((n) => IMG_EXTS.has(extname(n).toLowerCase()))
+        .sort((a, b) => a.localeCompare(b))
+        .slice(0, 300)
+        .map((n) => ({ name: n, path: join(dir, n) }))
+      return { path: dir, entries }
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+  // Render a thumbnail data URL for one image (decode + downscale). Called
+  // lazily by the renderer grid; SVG and undecodable files resolve `{ error }`
+  // and the cell shows an empty tile.
+  ipcMain.handle('dsh:wallpaper-thumb', async (_event, rawPath: unknown) => {
+    if (typeof rawPath !== 'string' || rawPath === '') return { error: 'invalid path' }
+    try {
+      const image = nativeImage.createFromPath(rawPath)
+      if (image.isEmpty()) return { error: 'cannot decode image' }
+      const size = image.getSize()
+      const resized = size.width > 360 ? image.resize({ width: 360 }) : image
+      return { url: resized.toDataURL() }
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+  ipcMain.handle('dsh:wallpaper-apply', async (_event, rawPath: unknown) => {
+    if (typeof rawPath !== 'string' || rawPath === '') return { error: 'invalid path' }
+    return applyWallpaperFile(rawPath)
   })
   ipcMain.handle('dsh:wallpaper-clear', () => {
     removeStoredWallpaper(userData, wallpaperFile)

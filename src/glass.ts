@@ -587,6 +587,12 @@ export function ambientStyleScript(): string {
       // glass as the input card (alpha 0.35 + blur, inside the strip's own box
       // only) so the two read as one family above the input.
       '[class*=\"lXshSW_root\"] { background: rgba(15,17,23,0.35) !important; backdrop-filter: blur(24px) saturate(140%) !important; -webkit-backdrop-filter: blur(24px) saturate(140%) !important; }',
+      // User message bubbles in the conversation: DSH paints them with
+      // --dsw-specific-bubble, an OPAQUE neutral (rgb(44,44,46)) that reads as
+      // a solid slab next to the frosted input card. Repaint them with the
+      // same frosted glass as the input card (alpha 0.35 + blur, inside each
+      // bubble's own box only) so sent messages match the composer family.
+      '[class*=\"_bubble\"] { background-color: rgba(15,17,23,0.35) !important; backdrop-filter: blur(24px) saturate(140%) !important; -webkit-backdrop-filter: blur(24px) saturate(140%) !important; }',
       // Tool-call output (Bash etc.) code blocks: DSH fills them with
       // --dsw-alias-markdown-code-block (opaque) and the banner with
       // --dsw-alias-markdown-code-block-banner (opaque). Repaint both with the
@@ -2580,8 +2586,8 @@ export function wallpaperControlScript(): string {
     const MOUNTED = '[data-dsh-wallpaper]'
     const mount = () => {
       if (window.dshDesktop === undefined) return
-      // The wallpaper control now lives in the injected Theme Settings panel
-      // (主题设置), mounted by themeSettingsScript — not the Appearance row.
+      // The wallpaper control lives in the injected Theme Settings panel
+      // (主题设置), mounted by themeSettingsScript.
       const panel = document.querySelector('[data-dsh-theme-panel]')
       if (panel === null) return
       const zh = window.__dshThemeLocale !== 'en'
@@ -2592,51 +2598,162 @@ export function wallpaperControlScript(): string {
         if (titleEl !== null && titleEl.textContent !== title) titleEl.textContent = title
         return
       }
+        const folderLabel = zh ? '选择文件夹…' : 'Choose folder…'
         const pickLabel = zh ? '选择壁纸…' : 'Choose wallpaper…'
         const clearLabel = zh ? '移除' : 'Remove'
+        const hintLabel = zh ? '双击缩略图切换壁纸' : 'Double-click a thumbnail to apply'
         const control = document.createElement('div')
         control.dataset.dshWallpaper = 'true'
         control.style.cssText = 'flex-direction:column;gap:10px;padding:16px 0;display:flex'
         control.innerHTML =
           '<div style="color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px"></div>' +
-          '<div style="display:flex;align-items:center;gap:10px">' +
-            '<button data-dsh-wallpaper-pick style="background:#4176e6;color:#fff;border:none;border-radius:16px;padding:6px 14px;font-size:13px;cursor:pointer">' + pickLabel + '</button>' +
-            '<button data-dsh-wallpaper-clear style="background:transparent;color:var(--dsw-alias-label-primary);border:1px solid rgba(65,118,230,0.4);border-radius:16px;padding:6px 14px;font-size:13px;cursor:pointer">' + clearLabel + '</button>' +
-            '<span data-dsh-wallpaper-name style="flex:1;color:var(--dsw-alias-label-secondary);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right"></span>' +
-          '</div>'
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+            '<button data-dsh-wallpaper-folder style="background:#4176e6;color:#fff;border:none;border-radius:16px;padding:6px 12px;font-size:13px;cursor:pointer">' + folderLabel + '</button>' +
+            '<button data-dsh-wallpaper-pick style="background:transparent;color:var(--dsw-alias-label-primary);border:1px solid rgba(65,118,230,0.4);border-radius:16px;padding:6px 12px;font-size:13px;cursor:pointer">' + pickLabel + '</button>' +
+            '<button data-dsh-wallpaper-clear style="background:transparent;color:var(--dsw-alias-label-primary);border:1px solid rgba(128,132,142,0.4);border-radius:16px;padding:6px 12px;font-size:13px;cursor:pointer">' + clearLabel + '</button>' +
+            '<span data-dsh-wallpaper-name style="flex:1;min-width:120px;color:var(--dsw-alias-label-secondary);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right"></span>' +
+          '</div>' +
+          '<div data-dsh-wallpaper-hint style="color:var(--dsw-alias-label-tertiary);font-size:11px;display:none">' + hintLabel + '</div>' +
+          '<div data-dsh-wallpaper-grid style="display:none;grid-template-columns:repeat(3,1fr);gap:6px;overflow-y:auto;padding-right:2px"></div>' +
+          '<style>' +
+            '[data-dsh-wallpaper-grid] .dsh-wp-cell { position:relative; aspect-ratio:16/10; border-radius:8px; overflow:hidden; cursor:pointer; background:rgba(128,132,142,0.15); flex:none; }' +
+            '[data-dsh-wallpaper-grid] .dsh-wp-cell img { width:100%; height:100%; object-fit:cover; display:block; }' +
+            '[data-dsh-wallpaper-grid] .dsh-wp-cell .dsh-wp-badge { position:absolute; top:4px; right:4px; width:14px; height:14px; border-radius:50%; background:rgba(15,17,23,0.7); border:2px solid #4176e6; display:none; }' +
+            '[data-dsh-wallpaper-grid] .dsh-wp-cell.dsh-wp-active { outline:2px solid #4176e6; outline-offset:-2px; }' +
+            '[data-dsh-wallpaper-grid] .dsh-wp-cell.dsh-wp-active .dsh-wp-badge { display:block; }' +
+            '[data-dsh-wallpaper-grid] .dsh-wp-cell:hover { outline:1px solid rgba(255,255,255,0.35); outline-offset:-1px; }' +
+          '</style>'
         const titleEl = control.firstElementChild
         if (titleEl !== null) titleEl.textContent = title
+        const folderBtn = control.querySelector('[data-dsh-wallpaper-folder]')
         const pickBtn = control.querySelector('[data-dsh-wallpaper-pick]')
         const clearBtn = control.querySelector('[data-dsh-wallpaper-clear]')
         const nameEl = control.querySelector('[data-dsh-wallpaper-name]')
-        if (pickBtn === null || clearBtn === null || nameEl === null) return
-        const apply = (url, file) => {
+        const grid = control.querySelector('[data-dsh-wallpaper-grid]')
+        const hint = control.querySelector('[data-dsh-wallpaper-hint]')
+        if (folderBtn === null || pickBtn === null || clearBtn === null || nameEl === null || grid === null || hint === null) return
+        const apply = (url, file, srcPath) => {
           window.__dshWallpaperUrl = url
           nameEl.textContent = file === null ? '' : file
           const layer = document.getElementById('dsh-dt-wallpaper')
           if (layer !== null) layer.style.backgroundImage = url ? 'url("' + url + '")' : 'none'
+          if (typeof srcPath === 'string' && srcPath !== '') {
+            try { localStorage.setItem('dsh-desktop-wallpaper-src', srcPath) } catch {}
+            grid.querySelectorAll('.dsh-wp-cell').forEach((cell) => {
+              cell.classList.toggle('dsh-wp-active', cell.dataset.path === srcPath)
+            })
+          }
         }
+        // ── Thumbnail grid: 3 columns, 2 visible rows, vertical scroll ──
+        // Cells load their thumbnails lazily (IntersectionObserver) so a
+        // large folder does not decode every image up front.
+        let thumbObs = null
+        const loadThumb = (cell) => {
+          if (cell.dataset.loaded === '1') return
+          cell.dataset.loaded = '1'
+          window.dshDesktop.wallpaper.thumb(cell.dataset.path).then((res) => {
+            if (!cell.isConnected) return
+            if (res !== null && typeof res === 'object' && typeof res.url === 'string') {
+              const img = cell.querySelector('img')
+              if (img !== null) img.src = res.url
+            }
+          }).catch(() => {})
+        }
+        const computeGridH = () => {
+          // 2 rows of 16:10 cells + one 6px gap.
+          const cellW = (grid.clientWidth - 12) / 3
+          grid.style.maxHeight = Math.round(cellW * 0.625 * 2 + 6) + 'px'
+        }
+        const renderGrid = (entries) => {
+          grid.textContent = ''
+          if (!Array.isArray(entries) || entries.length === 0) {
+            grid.style.display = 'none'
+            hint.style.display = 'none'
+            return
+          }
+          grid.style.display = 'grid'
+          hint.style.display = ''
+          const curSrc = (() => { try { return localStorage.getItem('dsh-desktop-wallpaper-src') } catch { return null } })()
+          for (const e of entries) {
+            const cell = document.createElement('div')
+            cell.className = 'dsh-wp-cell'
+            cell.dataset.path = e.path
+            cell.innerHTML = '<img alt="">' + '<span class="dsh-wp-badge"></span>'
+            if (curSrc === e.path) cell.classList.add('dsh-wp-active')
+            cell.addEventListener('dblclick', () => {
+              window.dshDesktop.wallpaper.apply(e.path).then((res) => {
+                if (res === null || typeof res !== 'object') return
+                if (typeof res.error === 'string') { alert(res.error); return }
+                if (typeof res.url === 'string') {
+                  apply(res.url, typeof res.file === 'string' ? res.file : null, e.path)
+                }
+              }).catch(() => {})
+            })
+            grid.appendChild(cell)
+            if (thumbObs !== null) thumbObs.observe(cell)
+          }
+          computeGridH()
+        }
+        thumbObs = new IntersectionObserver((entries) => {
+          for (const en of entries) {
+            if (en.isIntersecting) {
+              loadThumb(en.target)
+              thumbObs.unobserve(en.target)
+            }
+          }
+        }, { root: grid, rootMargin: '120px' })
+        const onWinResize = () => { if (grid.isConnected && grid.style.display !== 'none') computeGridH() }
+        // The control is recreated on every panel open and has no dispose
+        // hook, so keep at most ONE resize listener via a window registry.
+        const prevResize = window.__dshWpResizeHandlers || []
+        prevResize.forEach((h) => window.removeEventListener('resize', h))
+        window.__dshWpResizeHandlers = [onWinResize]
+        window.addEventListener('resize', onWinResize)
+        folderBtn.addEventListener('click', () => {
+          window.dshDesktop.wallpaper.folderPick().then((res) => {
+            if (res === null || typeof res !== 'object') return
+            if (res.canceled) return
+            if (typeof res.error === 'string') { alert(res.error); return }
+            if (typeof res.path === 'string' && res.path !== '') {
+              try { localStorage.setItem('dsh-desktop-wallpaper-folder', res.path) } catch {}
+            }
+            nameEl.textContent = typeof res.path === 'string' ? res.path : ''
+            renderGrid(res.entries)
+          }).catch(() => {})
+        })
         pickBtn.addEventListener('click', () => {
           window.dshDesktop.wallpaper.pick().then((res) => {
             if (res === null || typeof res !== 'object') return
             if (res.canceled) return
             if (typeof res.error === 'string') { alert(res.error); return }
-            if (typeof res.url === 'string') apply(res.url, typeof res.file === 'string' ? res.file : null)
+            if (typeof res.url === 'string') {
+              apply(res.url, typeof res.file === 'string' ? res.file : null, typeof res.srcPath === 'string' ? res.srcPath : null)
+            }
           }).catch(() => {})
         })
         clearBtn.addEventListener('click', () => {
           window.dshDesktop.wallpaper.clear().then((res) => {
-            if (res !== null && typeof res === 'object' && res.ok) apply(null, null)
+            if (res !== null && typeof res === 'object' && res.ok) apply(null, null, null)
           }).catch(() => {})
         })
         window.dshDesktop.wallpaper.get().then((res) => {
           if (res !== null && typeof res === 'object') {
             const url = typeof res.url === 'string' ? res.url : null
-            apply(url, typeof res.file === 'string' ? res.file : null)
+            apply(url, typeof res.file === 'string' ? res.file : null, null)
           }
         }).catch(() => {})
+        // Restore the last browsed folder's grid without reopening the dialog.
+        const lastFolder = (() => { try { return localStorage.getItem('dsh-desktop-wallpaper-folder') } catch { return null } })()
+        if (lastFolder !== null && lastFolder !== '') {
+          window.dshDesktop.fs.list(lastFolder).then((res) => {
+            if (res === null || typeof res !== 'object' || res.error || !Array.isArray(res.entries)) return
+            const imgs = res.entries.filter((e) => e && typeof e.name === 'string' && /\.(png|jpe?g|webp|gif|bmp)$/i.test(e.name)).map((e) => ({ name: e.name, path: e.path }))
+            nameEl.textContent = typeof res.path === 'string' ? res.path : ''
+            renderGrid(imgs)
+          }).catch(() => {})
+        }
       // Mount inside the Theme Settings panel's dedicated wallpaper slot (the
-      // first block in the panel, above the opacity slider).
+      // first block in the panel, above the brand color-switch interval).
       const holder = panel.querySelector('[data-dsh-theme-wallpaper-slot]') || panel
       holder.appendChild(control)
     }
@@ -2666,7 +2783,6 @@ export function featureControlScript(): string {
       window.__dshFeatureControlObserver.disconnect()
       window.__dshFeatureControlObserver = undefined
     }
-    const MOUNTED = '[data-dsh-feature-controls]'
     const KEYS = {
       files: 'dsh-desktop-files-visible',
       term: 'dsh-desktop-terminal-visible',
@@ -2696,10 +2812,49 @@ export function featureControlScript(): string {
         cycle: zh ? '标题颜色切换时间' : 'Brand color interval',
         unit: zh ? '秒' : 's',
       }
+      // ── Cycle interval control (own block, ABOVE the opacity slider) ──
+      let cycleControl = document.querySelector('[data-dsh-cycle-control]')
+      if (cycleControl === null) {
+        const holder = panel.querySelector('[data-dsh-theme-cycle-slot]') || panel
+        cycleControl = document.createElement('div')
+        cycleControl.dataset.dshCycleControl = 'true'
+        cycleControl.style.cssText = 'display:flex;align-items:center;gap:10px;padding:16px 0'
+        cycleControl.innerHTML =
+          '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-label-cycle></span>' +
+          '<input type="number" min="1" max="600" step="1" data-dsh-cycle-input style="width:64px;background:rgb(39,46,62);color:var(--dsw-alias-label-primary);border:none;border-radius:10px;padding:6px 8px;font-size:13px;text-align:center;outline:none">' +
+          '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:24px" data-dsh-cycle-unit></span>'
+        const sync = (sel, text) => {
+          const el = cycleControl.querySelector(sel)
+          if (el !== null) el.textContent = text
+        }
+        sync('[data-dsh-label-cycle]', labels.cycle)
+        sync('[data-dsh-cycle-unit]', labels.unit)
+        const cycleInput = cycleControl.querySelector('[data-dsh-cycle-input]')
+        if (cycleInput !== null) {
+          cycleInput.value = String(Math.max(1, Math.min(600, Math.round(read(KEYS.cycle, 10)))))
+          cycleInput.addEventListener('change', () => {
+            let secs = Math.round(Number(cycleInput.value))
+            if (!Number.isFinite(secs)) secs = 10
+            secs = Math.max(1, Math.min(600, secs))
+            cycleInput.value = String(secs)
+            write(KEYS.cycle, secs)
+            window.dispatchEvent(new CustomEvent('dsh-brand-cycle-change', { detail: { intervalMs: secs * 1000 } }))
+          })
+        }
+        holder.appendChild(cycleControl)
+      } else {
+        // Locale sync in place (the SPA swaps text without rebuilding).
+        const sync = (sel, text) => {
+          const el = cycleControl.querySelector(sel)
+          if (el !== null && el.textContent !== text) el.textContent = text
+        }
+        sync('[data-dsh-label-cycle]', labels.cycle)
+        sync('[data-dsh-cycle-unit]', labels.unit)
+      }
+      // ── Panel visibility toggles (own block, below the alpha control) ──
+      const MOUNTED = '[data-dsh-feature-controls]'
       const existing = document.querySelector(MOUNTED)
       if (existing !== null) {
-        // Already mounted (the SPA swaps locale text in place without
-        // rebuilding the panel): keep the control, sync its labels.
         const sync = (sel, text) => {
           const el = existing.querySelector(sel)
           if (el !== null && el.textContent !== text) el.textContent = text
@@ -2707,37 +2862,28 @@ export function featureControlScript(): string {
         sync('[data-dsh-feature-title]', labels.title)
         sync('[data-dsh-label-files]', labels.files)
         sync('[data-dsh-label-term]', labels.term)
-        sync('[data-dsh-label-cycle]', labels.cycle)
-        sync('[data-dsh-cycle-unit]', labels.unit)
         return
       }
       const control = document.createElement('div')
       control.dataset.dshFeatureControls = 'true'
-      control.style.cssText = 'flex-direction:column;gap:10px;padding:16px 0;display:flex'
+      control.style.cssText = 'flex-direction:column;gap:12px;padding:16px 0;display:flex'
       control.innerHTML =
         '<div style="color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px" data-dsh-feature-title></div>' +
-        '<div style="display:flex;flex-direction:column;gap:12px">' +
-          // Toggle switches (36×20 track, 16px thumb) styled like the theme.
-          '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
-            '<span class="dsh-switch">' +
-              '<input type="checkbox" data-dsh-toggle-files>' +
-              '<span class="track"></span><span class="thumb"></span>' +
-            '</span>' +
-            '<span style="color:var(--dsw-alias-label-secondary);font-size:13px" data-dsh-label-files></span>' +
-          '</label>' +
-          '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
-            '<span class="dsh-switch">' +
-              '<input type="checkbox" data-dsh-toggle-term>' +
-              '<span class="track"></span><span class="thumb"></span>' +
-            '</span>' +
-            '<span style="color:var(--dsw-alias-label-secondary);font-size:13px" data-dsh-label-term></span>' +
-          '</label>' +
-          '<div style="display:flex;align-items:center;gap:10px">' +
-            '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-label-cycle></span>' +
-            '<input type="number" min="1" max="600" step="1" data-dsh-cycle-input style="width:64px;background:rgb(39,46,62);color:var(--dsw-alias-label-primary);border:none;border-radius:10px;padding:6px 8px;font-size:13px;text-align:center;outline:none">' +
-            '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:24px" data-dsh-cycle-unit></span>' +
-          '</div>' +
-        '</div>' +
+        // Toggle switches (36×20 track, 16px thumb) styled like the theme.
+        '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
+          '<span class="dsh-switch">' +
+            '<input type="checkbox" data-dsh-toggle-files>' +
+            '<span class="track"></span><span class="thumb"></span>' +
+          '</span>' +
+          '<span style="color:var(--dsw-alias-label-secondary);font-size:13px" data-dsh-label-files></span>' +
+        '</label>' +
+        '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
+          '<span class="dsh-switch">' +
+            '<input type="checkbox" data-dsh-toggle-term>' +
+            '<span class="track"></span><span class="thumb"></span>' +
+          '</span>' +
+          '<span style="color:var(--dsw-alias-label-secondary);font-size:13px" data-dsh-label-term></span>' +
+        '</label>' +
         '<style>' +
           '[data-dsh-feature-controls] .dsh-switch { position:relative; width:36px; height:20px; flex:none; }' +
           '[data-dsh-feature-controls] .dsh-switch input { position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer; z-index:1; }' +
@@ -2750,20 +2896,16 @@ export function featureControlScript(): string {
       if (titleEl !== null) titleEl.textContent = labels.title
       const filesToggle = control.querySelector('[data-dsh-toggle-files]')
       const termToggle = control.querySelector('[data-dsh-toggle-term]')
-      const cycleInput = control.querySelector('[data-dsh-cycle-input]')
-      if (filesToggle === null || termToggle === null || cycleInput === null) return
+      if (filesToggle === null || termToggle === null) return
       const sync = (sel, text) => {
         const el = control.querySelector(sel)
         if (el !== null) el.textContent = text
       }
       sync('[data-dsh-label-files]', labels.files)
       sync('[data-dsh-label-term]', labels.term)
-      sync('[data-dsh-label-cycle]', labels.cycle)
-      sync('[data-dsh-cycle-unit]', labels.unit)
-      // Initial state from persisted settings (defaults: both panels on, 10s).
+      // Initial state from persisted settings (defaults: both panels on).
       filesToggle.checked = read(KEYS.files, true) !== false
       termToggle.checked = read(KEYS.term, true) !== false
-      cycleInput.value = String(Math.max(1, Math.min(600, Math.round(read(KEYS.cycle, 10)))))
       filesToggle.addEventListener('change', () => {
         const visible = filesToggle.checked
         write(KEYS.files, visible)
@@ -2774,14 +2916,6 @@ export function featureControlScript(): string {
         write(KEYS.term, visible)
         window.dispatchEvent(new CustomEvent('dsh-terminal-visible-change', { detail: { visible } }))
       })
-      cycleInput.addEventListener('change', () => {
-        let secs = Math.round(Number(cycleInput.value))
-        if (!Number.isFinite(secs)) secs = 10
-        secs = Math.max(1, Math.min(600, secs))
-        cycleInput.value = String(secs)
-        write(KEYS.cycle, secs)
-        window.dispatchEvent(new CustomEvent('dsh-brand-cycle-change', { detail: { intervalMs: secs * 1000 } }))
-      })
       // Mount inside the Theme Settings panel's dedicated feature slot.
       const holder = panel.querySelector('[data-dsh-theme-feature-slot]') || panel
       holder.appendChild(control)
@@ -2790,7 +2924,7 @@ export function featureControlScript(): string {
     const obs = new MutationObserver(mount)
     window.__dshFeatureControlObserver = obs
     // childList: row (re)mounts; characterData: locale switches swap text in
-    // place, which must re-sync the mounted control's labels.
+    // place, which must re-sync the mounted controls' labels.
     obs.observe(document.body, { childList: true, subtree: true, characterData: true })
   })()`
 }
@@ -2964,16 +3098,19 @@ export function themeSettingsScript(): string {
       controls.dataset.dshThemeControls = 'true'
       controls.style.cssText = 'display:flex;flex-direction:column'
       // Fixed order via dedicated slots: wallpaper block first, then the
-      // opacity slider + cursor effects, then the desktop feature toggles.
-      // Mounting order of the injected controls is otherwise racy
-      // (observer-driven).
+      // brand color-switch interval, then the opacity slider + cursor
+      // effects, then the panel visibility toggles. Mounting order of the
+      // injected controls is otherwise racy (observer-driven).
       const wallpaperSlot = document.createElement('div')
       wallpaperSlot.dataset.dshThemeWallpaperSlot = 'true'
+      const cycleSlot = document.createElement('div')
+      cycleSlot.dataset.dshThemeCycleSlot = 'true'
       const alphaSlot = document.createElement('div')
       alphaSlot.dataset.dshThemeAlphaSlot = 'true'
       const featureSlot = document.createElement('div')
       featureSlot.dataset.dshThemeFeatureSlot = 'true'
       controls.appendChild(wallpaperSlot)
+      controls.appendChild(cycleSlot)
       controls.appendChild(alphaSlot)
       controls.appendChild(featureSlot)
       group.appendChild(titleEl)

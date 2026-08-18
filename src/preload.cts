@@ -77,6 +77,12 @@ const wallpaper = {
   clear: (): Promise<unknown> => ipcRenderer.invoke('dsh:wallpaper-clear'),
   /** Current wallpaper; resolves to { url, file } or { url: null }. */
   get: (): Promise<unknown> => ipcRenderer.invoke('dsh:wallpaper-get'),
+  /** Open the system folder picker; resolves to { path, entries } | { canceled: true } | { error }. */
+  folderPick: (): Promise<unknown> => ipcRenderer.invoke('dsh:wallpaper-folder-pick'),
+  /** Render a thumbnail data URL for an image path; resolves to { url } | { error }. */
+  thumb: (path: string): Promise<unknown> => ipcRenderer.invoke('dsh:wallpaper-thumb', path),
+  /** Apply a wallpaper by absolute path (copied under userData); resolves to { file, url, srcPath } | { error }. */
+  apply: (path: string): Promise<unknown> => ipcRenderer.invoke('dsh:wallpaper-apply', path),
 }
 
 /** /backup command bridge (mirrors the backup skill's semantics). */
