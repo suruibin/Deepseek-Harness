@@ -620,6 +620,13 @@ export function ambientStyleScript(): string {
       // above the settings button), yet a pseudo-element is not a DOM
       // ancestor, so the overlay's containing block stays the viewport.
       '[class*=\"_centerCol\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      // The center column's inner root (wSkVaW_root) keeps the SPA's own
+      // rgba(15,17,23,0.224) fill, stacking ANOTHER translucent layer on top
+      // of the --dsh-glass-main-bg on the column — so at low main-surface
+      // values the center reads noticeably more opaque than the sidebar.
+      // Clear it; the column's own variable background is the single glass
+      // layer, matching the sidebar.
+      '[class*=\"_centerCol\"] [class*=\"wSkVaW_root\"] { background-color: transparent !important; }',
       '[class*=\"_sidebarCol\"] { position: relative !important; z-index: 1 !important; background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; }',
       '[class*=\"_sidebarCol\"]::before { content: \"\" !important; position: absolute !important; inset: 0 !important; border-radius: inherit !important; pointer-events: none !important; z-index: -1 !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // Hosted settings panel (VOzbGW_panel, tagged data-dsh-settings-panel by
