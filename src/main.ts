@@ -14,7 +14,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shel
 // node-pty is a native module; loaded lazily so a missing/broken build does
 // not break the shell. The embedded terminal feature degrades gracefully.
 const require_ = createRequire(import.meta.url)
-import { alphaControlScript, ambientStyleScript, featureControlScript, glassGuardScript, glassWindowOptions, inputHistoryScript, loadGlassSettings, saveGlassSettings, terminalScript, themeScript, themeSettingsScript, wallpaperControlScript, wallpaperLayerScript, whaleSprayScript, type GlassTheme } from './glass.ts'
+import { alphaControlScript, ambientStyleScript, featureControlScript, glassControlsScript, glassGuardScript, glassWindowOptions, inputHistoryScript, loadGlassSettings, saveGlassSettings, terminalScript, themeScript, themeSettingsScript, wallpaperControlScript, wallpaperLayerScript, whaleSprayScript, type GlassTheme } from './glass.ts'
 import { gitStatus } from './git-status.ts'
 import { detectExistingServer, resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
 import { mergePlugins, pluginsCssScript, readPluginDir } from './plugins.ts'
@@ -196,6 +196,23 @@ async function injectWallpaperControl(window: BrowserWindow): Promise<void> {
 async function injectFeatureControl(window: BrowserWindow): Promise<void> {
   try {
     await window.webContents.executeJavaScript(featureControlScript())
+  } catch {
+    // Settings panel not ready; the next did-finish-load re-injects.
+  }
+}
+
+/**
+ * Inject the unified frosted-glass controls into the hosted settings page,
+ * mounted in the Theme Settings panel (主题设置 → 界面毛玻璃): one slider for
+ * the main surface (composer/bubbles/popup menus) and one for the settings
+ * surface. Values persist to localStorage and re-theme whole surface families
+ * at once via CSS variables. Errors are non-fatal, the next did-finish-load
+ * re-injects.
+ * @param window - the window hosting the settings page.
+ */
+async function injectGlassControls(window: BrowserWindow): Promise<void> {
+  try {
+    await window.webContents.executeJavaScript(glassControlsScript())
   } catch {
     // Settings panel not ready; the next did-finish-load re-injects.
   }
@@ -421,6 +438,7 @@ function createWindow(url: URL): void {
       void injectAlphaControl(window)
       void injectWallpaperControl(window)
       void injectFeatureControl(window)
+      void injectGlassControls(window)
       void injectAmbientStyle(window)
       void injectPlugins(window)
       void injectTerminal(window)

@@ -84,6 +84,11 @@ export function storeWallpaper(
   } catch {
     return { error: 'failed to store wallpaper' }
   }
+  // The on-disk file changed under the SAME name, so the cached data URL for
+  // it is now stale — drop it, or the next apply of a same-extension image
+  // would return the previous wallpaper's bytes (double-click "doesn't
+  // switch"). wallpaperDataUrl re-encodes on the next call.
+  cache = null
   const url = wallpaperDataUrl(userData, file)
   if (url === null) return { error: 'failed to encode wallpaper' }
   return { file, url }

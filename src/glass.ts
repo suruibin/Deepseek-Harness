@@ -579,20 +579,34 @@ export function ambientStyleScript(): string {
       // 0.35 over the canvas, not the barely-there 0.224), while text/buttons
       // keep their own opaque fills for readability. The frosted (blur)
       // effect applies ONLY inside the card's own border box — the row around
-      // it keeps the plain canvas background.
-      '[class*=\"uV2eYG_card\"] { background-color: rgba(15,17,23,0.35) !important; backdrop-filter: blur(24px) saturate(140%) !important; -webkit-backdrop-filter: blur(24px) saturate(140%) !important; }',
+      // it keeps the plain canvas background. The alpha/blur come from the
+      // "主界面毛玻璃" slider (主题设置 → 界面毛玻璃), defaulting to the
+      // historical values.
+      '[class*=\"uV2eYG_card\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // Task progress strip above the composer (lXshSW_root): DSH paints it
       // with --dsw-specific-tip, an OPAQUE neutral (rgb(53,54,56)) that reads
       // as a solid slab on the glass canvas. Repaint it with the same frosted
       // glass as the input card (alpha 0.35 + blur, inside the strip's own box
       // only) so the two read as one family above the input.
-      '[class*=\"lXshSW_root\"] { background: rgba(15,17,23,0.35) !important; backdrop-filter: blur(24px) saturate(140%) !important; -webkit-backdrop-filter: blur(24px) saturate(140%) !important; }',
+      '[class*=\"lXshSW_root\"] { background: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // User message bubbles in the conversation: DSH paints them with
-      // --dsw-specific-bubble, an OPAQUE neutral (rgb(44,44,46)) that reads as
+      // --dsh-specific-bubble, an OPAQUE neutral (rgb(44,44,46)) that reads as
       // a solid slab next to the frosted input card. Repaint them with the
       // same frosted glass as the input card (alpha 0.35 + blur, inside each
       // bubble's own box only) so sent messages match the composer family.
-      '[class*=\"_bubble\"] { background-color: rgba(15,17,23,0.35) !important; backdrop-filter: blur(24px) saturate(140%) !important; -webkit-backdrop-filter: blur(24px) saturate(140%) !important; }',
+      '[class*=\"_bubble\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      // Composer popup menus (model / access-mode / command pickers, e.g.
+      // _7KE1Ra_menu): DSH fills them with an OPAQUE blue-gray (rgb(39,46,62)),
+      // so the panel that pops up while typing reads as a solid slab. Repaint
+      // with the same main-surface frosted glass as the input card, driven by
+      // the 主界面毛玻璃 slider.
+      '[class*=\"_menu\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      // Hosted settings panel (VOzbGW_panel, tagged data-dsh-settings-panel by
+      // themeSettingsScript): DSH paints it with an OPAQUE blue-gray
+      // (rgb(32,38,52)). Give the SETTINGS surface its own frosted glass,
+      // driven by the 设置界面毛玻璃 slider, so it reads as glass like the
+      // main UI instead of a solid slab.
+      '[data-dsh-settings-panel] { background-color: var(--dsh-glass-settings-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-settings-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-settings-blur, 24px)) saturate(140%) !important; }',
       // Tool-call output (Bash etc.) code blocks: DSH fills them with
       // --dsw-alias-markdown-code-block (opaque) and the banner with
       // --dsw-alias-markdown-code-block-banner (opaque). Repaint both with the
@@ -2930,6 +2944,151 @@ export function featureControlScript(): string {
 }
 
 /**
+ * Injected UI for the unified frosted-glass controls in the Theme Settings
+ * panel (主题设置 → 界面毛玻璃): two independent sliders — one for the MAIN
+ * surface (composer card, task strip, user bubbles, popup menus) and one for
+ * the SETTINGS surface (the hosted settings panel itself). Each writes a
+ * single pair of CSS variables consumed by the ambientStyleScript rules, so
+ * one slider re-themes every surface of that family at once instead of
+ * configuring them one by one. Values persist to localStorage (percent,
+ * default 35) and apply immediately via the `#dsh-glass-custom` style node.
+ */
+export function glassControlsScript(): string {
+  return `(() => {
+    if (window.__dshGlassControlObserver) {
+      window.__dshGlassControlObserver.disconnect()
+      window.__dshGlassControlObserver = undefined
+    }
+    const KEYS = { main: 'dsh-desktop-glass-main', settings: 'dsh-desktop-glass-settings' }
+    const read = (key, fallback) => {
+      try {
+        const raw = localStorage.getItem(key)
+        if (raw !== null) {
+          const v = Number(raw)
+          if (Number.isFinite(v)) return v
+        }
+      } catch {}
+      return fallback
+    }
+    const write = (key, value) => {
+      try { localStorage.setItem(key, String(value)) } catch {}
+    }
+    let mainVal = Math.max(20, Math.min(60, read(KEYS.main, 35)))
+    let settingsVal = Math.max(20, Math.min(60, read(KEYS.settings, 35)))
+    // One style node carries the four glass variables; ambientStyleScript's
+    // rules reference them with the same values as defaults, so this node only
+    // matters once the user deviates from the default.
+    const applyVars = () => {
+      let s = document.getElementById('dsh-glass-custom')
+      if (s === null) {
+        s = document.createElement('style')
+        s.id = 'dsh-glass-custom'
+        document.head.appendChild(s)
+      }
+      const a = (v) => 'rgba(15,17,23,' + (v / 100).toFixed(3) + ')'
+      s.textContent = 'body { ' +
+        '--dsh-glass-main-bg: ' + a(mainVal) + '; ' +
+        '--dsh-glass-main-blur: 24px; ' +
+        '--dsh-glass-settings-bg: ' + a(settingsVal) + '; ' +
+        '--dsh-glass-settings-blur: 24px; ' +
+      '}'
+    }
+    const mount = () => {
+      if (window.dshDesktop === undefined) return
+      const panel = document.querySelector('[data-dsh-theme-panel]')
+      if (panel === null) return
+      const zh = window.__dshThemeLocale !== 'en'
+      const labels = {
+        title: zh ? '界面毛玻璃' : 'Interface glass',
+        main: zh ? '主界面毛玻璃' : 'Main surface',
+        settings: zh ? '设置界面毛玻璃' : 'Settings surface',
+      }
+      const existing = document.querySelector('[data-dsh-glass-controls]')
+      if (existing !== null) {
+        const sync = (sel, text) => {
+          const el = existing.querySelector(sel)
+          if (el !== null && el.textContent !== text) el.textContent = text
+        }
+        sync('[data-dsh-glass-title]', labels.title)
+        sync('[data-dsh-glass-main-label]', labels.main)
+        sync('[data-dsh-glass-settings-label]', labels.settings)
+        return
+      }
+      const control = document.createElement('div')
+      control.dataset.dshGlassControls = 'true'
+      control.style.cssText = 'flex-direction:column;gap:10px;padding:16px 0;display:flex'
+      control.innerHTML =
+        '<div style="color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px" data-dsh-glass-title></div>' +
+        '<div style="display:flex;flex-direction:column;gap:10px">' +
+          '<div style="display:flex;flex-direction:column;gap:4px">' +
+            '<div style="display:flex;align-items:center;gap:12px">' +
+              '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-glass-main-label></span>' +
+              '<input type="range" min="20" max="60" step="1" data-dsh-glass-main style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-main-fill,35%),rgba(65,118,230,0.22) var(--dsh-main-fill,35%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
+              '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-main-val></span>' +
+            '</div>' +
+            '<div style="display:flex;align-items:center;gap:12px">' +
+              '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-glass-settings-label></span>' +
+              '<input type="range" min="20" max="60" step="1" data-dsh-glass-settings style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-settings-fill,35%),rgba(65,118,230,0.22) var(--dsh-settings-fill,35%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
+              '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-settings-val></span>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<style>' +
+          '[data-dsh-glass-controls] input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid #4176e6;box-shadow:0 1px 4px rgba(15,20,35,0.35),0 0 0 3px rgba(65,118,230,0.18);transition:box-shadow 0.15s ease,transform 0.15s ease;cursor:pointer}' +
+          '[data-dsh-glass-controls] input[type=range]:hover::-webkit-slider-thumb{box-shadow:0 1px 6px rgba(15,20,35,0.4),0 0 0 5px rgba(65,118,230,0.22)}' +
+          '[data-dsh-glass-controls] input[type=range]:active::-webkit-slider-thumb{transform:scale(1.1)}' +
+          '[data-dsh-glass-controls] input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #4176e6;box-shadow:0 1px 4px rgba(15,20,35,0.35);cursor:pointer}' +
+          '[data-dsh-glass-controls] input[type=range]::-moz-range-track{height:6px;border-radius:999px;background:linear-gradient(90deg,#4176e6 var(--dsh-main-fill,35%),rgba(65,118,230,0.22) var(--dsh-main-fill,35%))}' +
+        '</style>'
+      const titleEl = control.querySelector('[data-dsh-glass-title]')
+      if (titleEl !== null) titleEl.textContent = labels.title
+      const sync = (sel, text) => {
+        const el = control.querySelector(sel)
+        if (el !== null) el.textContent = text
+      }
+      sync('[data-dsh-glass-main-label]', labels.main)
+      sync('[data-dsh-glass-settings-label]', labels.settings)
+      const mainSlider = control.querySelector('[data-dsh-glass-main]')
+      const settingsSlider = control.querySelector('[data-dsh-glass-settings]')
+      const mainValEl = control.querySelector('[data-dsh-glass-main-val]')
+      const settingsValEl = control.querySelector('[data-dsh-glass-settings-val]')
+      if (mainSlider === null || settingsSlider === null || mainValEl === null || settingsValEl === null) return
+      const renderMain = () => {
+        mainSlider.value = String(mainVal)
+        mainValEl.textContent = mainVal + '%'
+        mainSlider.style.setProperty('--dsh-main-fill', ((mainVal - 20) / 40 * 100).toFixed(1) + '%')
+      }
+      const renderSettings = () => {
+        settingsSlider.value = String(settingsVal)
+        settingsValEl.textContent = settingsVal + '%'
+        settingsSlider.style.setProperty('--dsh-settings-fill', ((settingsVal - 20) / 40 * 100).toFixed(1) + '%')
+      }
+      mainSlider.addEventListener('input', () => {
+        mainVal = Math.round(Number(mainSlider.value))
+        write(KEYS.main, mainVal)
+        renderMain()
+        applyVars()
+      })
+      settingsSlider.addEventListener('input', () => {
+        settingsVal = Math.round(Number(settingsSlider.value))
+        write(KEYS.settings, settingsVal)
+        renderSettings()
+        applyVars()
+      })
+      renderMain()
+      renderSettings()
+      const holder = panel.querySelector('[data-dsh-theme-glass-slot]') || panel
+      holder.appendChild(control)
+    }
+    applyVars() // apply persisted values on every injection, panel open or not
+    mount()
+    const obs = new MutationObserver(mount)
+    window.__dshGlassControlObserver = obs
+    obs.observe(document.body, { childList: true, subtree: true, characterData: true })
+  })()`
+}
+
+/**
  * Injected UI for a dedicated "Theme Settings" (主题设置) entry in the hosted
  * settings sidebar. Adds a nav item right after "通用设置/General" and, when
  * clicked, hides the SPA's own sections and mounts a theme panel that hosts
@@ -3109,10 +3268,13 @@ export function themeSettingsScript(): string {
       alphaSlot.dataset.dshThemeAlphaSlot = 'true'
       const featureSlot = document.createElement('div')
       featureSlot.dataset.dshThemeFeatureSlot = 'true'
+      const glassSlot = document.createElement('div')
+      glassSlot.dataset.dshThemeGlassSlot = 'true'
       controls.appendChild(wallpaperSlot)
       controls.appendChild(cycleSlot)
       controls.appendChild(alphaSlot)
       controls.appendChild(featureSlot)
+      controls.appendChild(glassSlot)
       group.appendChild(titleEl)
       group.appendChild(controls)
       panel.appendChild(group)
@@ -3151,6 +3313,13 @@ export function themeSettingsScript(): string {
         return
       }
       if (list !== state.navList) state.navList = list
+      // Tag the hosted settings panel so the ambient CSS can give the whole
+      // SETTINGS surface its own frosted glass (设置界面毛玻璃 slider) instead
+      // of the SPA's opaque fill.
+      const settingsPanel = list.closest('div[class*="_panel"]')
+      if (settingsPanel !== null && settingsPanel.getAttribute('data-dsh-settings-panel') !== 'true') {
+        settingsPanel.setAttribute('data-dsh-settings-panel', 'true')
+      }
       ensureCell()
       if (!state.open) return
       if (document.querySelector('[data-dsh-theme-panel]') === null) {
