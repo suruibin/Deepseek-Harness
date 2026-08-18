@@ -611,18 +611,18 @@ export function ambientStyleScript(): string {
       // match each); a blanket [class*="_root"] under the center column would
       // hit every message/tool-call block.
       //
-      // The SIDEBAR cannot carry the backdrop-filter itself: the hosted
-      // settings panel lives in its footer (footArea → settingsArea →
-      // VOzbGW_overlay), and a backdrop-filter on the column turns it into
-      // the containing block for that fixed overlay, collapsing the settings
-      // page to the 268px column width. The blur therefore goes on the
-      // sidebar's content elements only (logo row / new-session / session
-      // list region), leaving the footer (and the overlay it hosts)
-      // untouched; the column still carries the glass background color, so
-      // the whole sidebar reads as one surface.
+      // The SIDEBAR cannot carry the backdrop-filter on the column itself:
+      // the hosted settings panel lives in its footer (footArea →
+      // settingsArea → VOzbGW_overlay), and a backdrop-filter on the column
+      // turns it into the containing block for that fixed overlay, collapsing
+      // the settings page to the 268px column width. Instead the blur rides a
+      // ::before pseudo-element: it spans the WHOLE column (so the background
+      // is uniform from the logo row to the footer — no more visible seam
+      // above the settings button), yet a pseudo-element is not a DOM
+      // ancestor, so the overlay's containing block stays the viewport.
       '[class*=\"_centerCol\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
-      '[class*=\"_sidebarCol\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; }',
-      '[class*=\"hHd-Xa_logoRow\"], [class*=\"hHd-Xa_newSession\"], [class*=\"hHd-Xa_regionArea\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      '[class*=\"_sidebarCol\"] { position: relative !important; z-index: 0 !important; background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; }',
+      '[class*=\"_sidebarCol\"]::before { content: \"\" !important; position: absolute !important; inset: 0 !important; border-radius: inherit !important; pointer-events: none !important; z-index: -1 !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // Hosted settings panel (VOzbGW_panel, tagged data-dsh-settings-panel by
       // themeSettingsScript): DSH paints it with an OPAQUE blue-gray
       // (rgb(32,38,52)). Give the SETTINGS surface its own frosted glass,
