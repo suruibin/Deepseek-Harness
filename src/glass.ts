@@ -596,11 +596,16 @@ export function ambientStyleScript(): string {
       // bubble's own box only) so sent messages match the composer family.
       '[class*=\"_bubble\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // Composer popup menus (model / access-mode / command pickers, e.g.
-      // _7KE1Ra_menu): DSH fills them with an OPAQUE blue-gray (rgb(39,46,62)),
-      // so the panel that pops up while typing reads as a solid slab. Repaint
-      // with the same main-surface frosted glass as the input card, driven by
-      // the 主界面毛玻璃 slider.
-      '[class*=\"_menu\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      // _7KE1Ra_menu, _3e4SsG_menu): DSH fills them with an OPAQUE blue-gray
+      // (rgb(39,46,62)). They get a frosted glass of their own, but with an
+      // INDEPENDENT alpha floor: popup menus float over content and must stay
+      // readable, so they never drop below 50% opacity even when the 主界面毛
+      // 玻璃 slider is set low (at 20% every menu turned see-through — the
+      // user's complaint). The access-mode menu (Full access) keeps its
+      // native opaque look and is the readability bar these menus should
+      // match. --dsh-glass-menu-bg is maintained by glassControlsScript as
+      // max(main slider, 50%).
+      '[class*=\"_menu\"] { background-color: var(--dsh-glass-menu-bg, rgba(15,17,23,0.5)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // The whole MAIN surface (everything except the settings panel): the
       // sidebar and the center conversation column get the same frosted glass
       // as the composer (driven by the 主界面毛玻璃 slider), so the whole
@@ -608,7 +613,19 @@ export function ambientStyleScript(): string {
       // few frosted islands. Both classes are stable layout suffixes (one
       // match each); a blanket [class*="_root"] under the center column would
       // hit every message/tool-call block.
-      '[class*=\"_sidebarCol\"], [class*=\"_centerCol\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      //
+      // The SIDEBAR cannot carry the backdrop-filter itself: the hosted
+      // settings panel lives in its footer (footArea → settingsArea →
+      // VOzbGW_overlay), and a backdrop-filter on the column turns it into
+      // the containing block for that fixed overlay, collapsing the settings
+      // page to the 268px column width. The blur therefore goes on the
+      // sidebar's content elements only (logo row / new-session / session
+      // list region), leaving the footer (and the overlay it hosts)
+      // untouched; the column still carries the glass background color, so
+      // the whole sidebar reads as one surface.
+      '[class*=\"_centerCol\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      '[class*=\"_sidebarCol\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; }',
+      '[class*=\"hHd-Xa_logoRow\"], [class*=\"hHd-Xa_newSession\"], [class*=\"hHd-Xa_regionArea\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // Hosted settings panel (VOzbGW_panel, tagged data-dsh-settings-panel by
       // themeSettingsScript): DSH paints it with an OPAQUE blue-gray
       // (rgb(32,38,52)). Give the SETTINGS surface its own frosted glass,
@@ -3014,9 +3031,13 @@ export function glassControlsScript(): string {
         document.head.appendChild(s)
       }
       const a = (v) => 'rgba(15,17,23,' + (v / 100).toFixed(3) + ')'
+      // Popup menus get their own alpha, floored at 50% so they stay readable
+      // even when the main-surface slider is very transparent (see the
+      // [class*="_menu"] rule in ambientStyleScript).
       s.textContent = 'body { ' +
         '--dsh-glass-main-bg: ' + a(mainVal) + '; ' +
         '--dsh-glass-main-blur: 24px; ' +
+        '--dsh-glass-menu-bg: ' + a(Math.max(mainVal, 50)) + '; ' +
         '--dsh-glass-settings-bg: ' + a(settingsVal) + '; ' +
         '--dsh-glass-settings-blur: 24px; ' +
       '}'
