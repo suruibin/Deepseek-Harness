@@ -423,7 +423,8 @@ export function alphaControlScript(): string {
  * is independent of the window frame: film grain + brand glow over the whole
  * canvas, slim glass scrollbars, a floating rounded sidebar card, a compact
  * rounded details panel, a translucent icon-only new-session button, an
- * enlarged living brand (wordmark gradient + whale color cycling every 5s).
+ * enlarged living brand (wordmark gradient + whale color cycling, default
+ * 10s, configurable in 主题设置).
  * The empty-state hero glow behind the composer is hidden entirely.
  *
  * The previous injection is removed first so repeated calls replace instead
@@ -605,7 +606,8 @@ export function ambientStyleScript(): string {
     ].join('\\n')
     document.head.appendChild(style)
 
-    // Brand colors: whale accent + gradient palette, cycled every 5s.
+    // Brand colors: whale accent + gradient palette, cycled at the interval
+    // configured in 主题设置 (default 10s, see brandCycleMs below).
     const whaleColors = ['#4176e6', '#3b82f6', '#06b6d4', '#10b981', '#6366f1', '#0ea5e9', '#7b5cf0', '#f472b6']
     const gradPalettes = [
       ['#4176e6', '#7b5cf0', '#22d3ee'],
@@ -731,12 +733,24 @@ export function ambientStyleScript(): string {
       })
     }
 
-    // Every 10s pick fresh whale + gradient colors and repaint whichever
-    // brand surface is visible. Timestamp guard dedupes the 1s heartbeat.
+    // Every brandCycleMs() pick fresh whale + gradient colors and repaint
+    // whichever brand surface is visible. The interval is user-configurable
+    // (主题设置 → 标题颜色切换时间, persisted in localStorage; default 10s);
+    // the timestamp guard dedupes the 1s heartbeat.
+    const brandCycleMs = () => {
+      try {
+        const raw = localStorage.getItem('dsh-desktop-brand-cycle-sec')
+        if (raw !== null) {
+          const v = JSON.parse(raw)
+          if (typeof v === 'number' && v >= 1 && v <= 600) return Math.round(v * 1000)
+        }
+      } catch {}
+      return 10000
+    }
     let lastBrandColorChange = 0
     const cycleBrandColors = () => {
       const now = Date.now()
-      if (now - lastBrandColorChange < 10000) return
+      if (now - lastBrandColorChange < brandCycleMs()) return
       lastBrandColorChange = now
       whaleColor = whaleColors[Math.floor(Math.random() * whaleColors.length)]
       gradColors = gradPalettes[Math.floor(Math.random() * gradPalettes.length)]
@@ -755,6 +769,18 @@ export function ambientStyleScript(): string {
       applySidebarIcons()
     }
     setInterval(cycleBrandColors, 1000)
+    // Live updates from the settings control: repaint immediately so the new
+    // interval is felt at once instead of after the old cycle elapses. The
+    // handler is stashed on window so a re-injection replaces, not stacks it.
+    if (window.__dshBrandCycleHandler) {
+      window.removeEventListener('dsh-brand-cycle-change', window.__dshBrandCycleHandler)
+    }
+    const onBrandCycleChange = () => {
+      lastBrandColorChange = 0
+      cycleBrandColors()
+    }
+    window.__dshBrandCycleHandler = onBrandCycleChange
+    window.addEventListener('dsh-brand-cycle-change', onBrandCycleChange)
     // Tracks the previous sidebar rail state so toggles are detected once.
     let lastRailPresent = document.querySelector('[class*="_railFish"]') !== null
 
@@ -2088,6 +2114,53 @@ export function terminalScript(): string {
       filesPanel.style.bottom = termDock.style.display === 'flex' ? (DOCK_H + 8) + 'px' : '8px'
     }
 
+    // ── Feature visibility (主题设置 → 桌面功能 toggles) ──
+    // The 显示浏览文件夹 / 显示终端 switches decide whether the panels and
+    // their floating toggle buttons exist at all. Persisted in localStorage;
+    // live changes arrive as window events from featureControlScript.
+    const featureVisible = (key) => {
+      try {
+        const raw = localStorage.getItem(key)
+        if (raw !== null) return JSON.parse(raw) !== false
+      } catch {}
+      return true
+    }
+    const applyPanelVisibility = () => {
+      const filesOn = featureVisible('dsh-desktop-files-visible')
+      const termOn = featureVisible('dsh-desktop-terminal-visible')
+      if (!filesOn) {
+        btnFiles.style.display = 'none'
+        if (filesPanel.style.display === 'flex') filesClose()
+      } else {
+        btnFiles.style.display = filesPanel.style.display === 'flex' ? 'none' : 'flex'
+      }
+      if (!termOn) {
+        btnTerm.style.display = 'none'
+        if (termDock.style.display === 'flex') termClose()
+      } else {
+        btnTerm.style.display = termDock.style.display === 'flex' ? 'none' : 'flex'
+      }
+    }
+    const onFilesVisibleChange = (e) => {
+      const on = e.detail ? e.detail.visible !== false : true
+      if (on) btnFiles.style.display = filesPanel.style.display === 'flex' ? 'none' : 'flex'
+      else {
+        btnFiles.style.display = 'none'
+        if (filesPanel.style.display === 'flex') filesClose()
+      }
+    }
+    const onTerminalVisibleChange = (e) => {
+      const on = e.detail ? e.detail.visible !== false : true
+      if (on) btnTerm.style.display = termDock.style.display === 'flex' ? 'none' : 'flex'
+      else {
+        btnTerm.style.display = 'none'
+        if (termDock.style.display === 'flex') termClose()
+      }
+    }
+    window.addEventListener('dsh-files-visible-change', onFilesVisibleChange)
+    window.addEventListener('dsh-terminal-visible-change', onTerminalVisibleChange)
+    applyPanelVisibility()
+
     // Drag the panel's left edge to resize; the app squeeze follows.
     const resizeHandle = document.createElement('div')
     resizeHandle.style.cssText = 'position:absolute;left:-5px;top:0;bottom:0;width:10px;cursor:ew-resize;z-index:6'
@@ -2435,6 +2508,8 @@ export function terminalScript(): string {
         }
         btnTerm.remove()
         btnFiles.remove()
+        window.removeEventListener('dsh-files-visible-change', onFilesVisibleChange)
+        window.removeEventListener('dsh-terminal-visible-change', onTerminalVisibleChange)
         termUnderlay.remove()
         termDock.remove()
         window.removeEventListener('resize', onFilesResize)
@@ -2570,6 +2645,152 @@ export function wallpaperControlScript(): string {
     window.__dshWallpaperControlObserver = obs
     // childList: row (re)mounts; characterData: locale switches swap text in
     // place, which must re-sync the mounted control's title.
+    obs.observe(document.body, { childList: true, subtree: true, characterData: true })
+  })()`
+}
+
+/**
+ * Injected UI for the desktop-shell feature toggles in the Theme Settings
+ * panel (主题设置): whether the file browser panel and the terminal dock are
+ * enabled, and how often the top-left brand (wordmark + whale icon) changes
+ * color. Choices persist in localStorage (same pattern as the cursor-fx
+ * config) and take effect immediately by dispatching window events that the
+ * terminal/brand scripts listen to:
+ *   - dsh-files-visible-change   { visible }   → terminalScript
+ *   - dsh-terminal-visible-change{ visible }   → terminalScript
+ *   - dsh-brand-cycle-change     { intervalMs }→ ambientStyleScript
+ */
+export function featureControlScript(): string {
+  return `(() => {
+    if (window.__dshFeatureControlObserver) {
+      window.__dshFeatureControlObserver.disconnect()
+      window.__dshFeatureControlObserver = undefined
+    }
+    const MOUNTED = '[data-dsh-feature-controls]'
+    const KEYS = {
+      files: 'dsh-desktop-files-visible',
+      term: 'dsh-desktop-terminal-visible',
+      cycle: 'dsh-desktop-brand-cycle-sec',
+    }
+    const read = (key, fallback) => {
+      try {
+        const raw = localStorage.getItem(key)
+        if (raw !== null) return JSON.parse(raw)
+      } catch {}
+      return fallback
+    }
+    const write = (key, value) => {
+      try { localStorage.setItem(key, JSON.stringify(value)) } catch {}
+    }
+    const mount = () => {
+      if (window.dshDesktop === undefined) return
+      // Mount inside the Theme Settings panel (主题设置), like the alpha and
+      // wallpaper controls.
+      const panel = document.querySelector('[data-dsh-theme-panel]')
+      if (panel === null) return
+      const zh = window.__dshThemeLocale !== 'en'
+      const labels = {
+        title: zh ? '桌面功能' : 'Desktop features',
+        files: zh ? '显示浏览文件夹' : 'Show file browser',
+        term: zh ? '显示终端' : 'Show terminal',
+        cycle: zh ? '标题颜色切换时间' : 'Brand color interval',
+        unit: zh ? '秒' : 's',
+      }
+      const existing = document.querySelector(MOUNTED)
+      if (existing !== null) {
+        // Already mounted (the SPA swaps locale text in place without
+        // rebuilding the panel): keep the control, sync its labels.
+        const sync = (sel, text) => {
+          const el = existing.querySelector(sel)
+          if (el !== null && el.textContent !== text) el.textContent = text
+        }
+        sync('[data-dsh-feature-title]', labels.title)
+        sync('[data-dsh-label-files]', labels.files)
+        sync('[data-dsh-label-term]', labels.term)
+        sync('[data-dsh-label-cycle]', labels.cycle)
+        sync('[data-dsh-cycle-unit]', labels.unit)
+        return
+      }
+      const control = document.createElement('div')
+      control.dataset.dshFeatureControls = 'true'
+      control.style.cssText = 'flex-direction:column;gap:10px;padding:16px 0;display:flex'
+      control.innerHTML =
+        '<div style="color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px" data-dsh-feature-title></div>' +
+        '<div style="display:flex;flex-direction:column;gap:12px">' +
+          // Toggle switches (36×20 track, 16px thumb) styled like the theme.
+          '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
+            '<span class="dsh-switch">' +
+              '<input type="checkbox" data-dsh-toggle-files>' +
+              '<span class="track"></span><span class="thumb"></span>' +
+            '</span>' +
+            '<span style="color:var(--dsw-alias-label-secondary);font-size:13px" data-dsh-label-files></span>' +
+          '</label>' +
+          '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
+            '<span class="dsh-switch">' +
+              '<input type="checkbox" data-dsh-toggle-term>' +
+              '<span class="track"></span><span class="thumb"></span>' +
+            '</span>' +
+            '<span style="color:var(--dsw-alias-label-secondary);font-size:13px" data-dsh-label-term></span>' +
+          '</label>' +
+          '<div style="display:flex;align-items:center;gap:10px">' +
+            '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-label-cycle></span>' +
+            '<input type="number" min="1" max="600" step="1" data-dsh-cycle-input style="width:64px;background:rgb(39,46,62);color:var(--dsw-alias-label-primary);border:none;border-radius:10px;padding:6px 8px;font-size:13px;text-align:center;outline:none">' +
+            '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:24px" data-dsh-cycle-unit></span>' +
+          '</div>' +
+        '</div>' +
+        '<style>' +
+          '[data-dsh-feature-controls] .dsh-switch { position:relative; width:36px; height:20px; flex:none; }' +
+          '[data-dsh-feature-controls] .dsh-switch input { position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer; z-index:1; }' +
+          '[data-dsh-feature-controls] .dsh-switch .track { position:absolute; inset:0; border-radius:999px; background:rgba(128,132,142,0.35); box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08); transition:background 0.15s ease; }' +
+          '[data-dsh-feature-controls] .dsh-switch .thumb { position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.35); transition:transform 0.15s ease; }' +
+          '[data-dsh-feature-controls] .dsh-switch input:checked ~ .track { background:#4176e6; }' +
+          '[data-dsh-feature-controls] .dsh-switch input:checked ~ .thumb { transform:translateX(16px); }' +
+        '</style>'
+      const titleEl = control.querySelector('[data-dsh-feature-title]')
+      if (titleEl !== null) titleEl.textContent = labels.title
+      const filesToggle = control.querySelector('[data-dsh-toggle-files]')
+      const termToggle = control.querySelector('[data-dsh-toggle-term]')
+      const cycleInput = control.querySelector('[data-dsh-cycle-input]')
+      if (filesToggle === null || termToggle === null || cycleInput === null) return
+      const sync = (sel, text) => {
+        const el = control.querySelector(sel)
+        if (el !== null) el.textContent = text
+      }
+      sync('[data-dsh-label-files]', labels.files)
+      sync('[data-dsh-label-term]', labels.term)
+      sync('[data-dsh-label-cycle]', labels.cycle)
+      sync('[data-dsh-cycle-unit]', labels.unit)
+      // Initial state from persisted settings (defaults: both panels on, 10s).
+      filesToggle.checked = read(KEYS.files, true) !== false
+      termToggle.checked = read(KEYS.term, true) !== false
+      cycleInput.value = String(Math.max(1, Math.min(600, Math.round(read(KEYS.cycle, 10)))))
+      filesToggle.addEventListener('change', () => {
+        const visible = filesToggle.checked
+        write(KEYS.files, visible)
+        window.dispatchEvent(new CustomEvent('dsh-files-visible-change', { detail: { visible } }))
+      })
+      termToggle.addEventListener('change', () => {
+        const visible = termToggle.checked
+        write(KEYS.term, visible)
+        window.dispatchEvent(new CustomEvent('dsh-terminal-visible-change', { detail: { visible } }))
+      })
+      cycleInput.addEventListener('change', () => {
+        let secs = Math.round(Number(cycleInput.value))
+        if (!Number.isFinite(secs)) secs = 10
+        secs = Math.max(1, Math.min(600, secs))
+        cycleInput.value = String(secs)
+        write(KEYS.cycle, secs)
+        window.dispatchEvent(new CustomEvent('dsh-brand-cycle-change', { detail: { intervalMs: secs * 1000 } }))
+      })
+      // Mount inside the Theme Settings panel's dedicated feature slot.
+      const holder = panel.querySelector('[data-dsh-theme-feature-slot]') || panel
+      holder.appendChild(control)
+    }
+    mount()
+    const obs = new MutationObserver(mount)
+    window.__dshFeatureControlObserver = obs
+    // childList: row (re)mounts; characterData: locale switches swap text in
+    // place, which must re-sync the mounted control's labels.
     obs.observe(document.body, { childList: true, subtree: true, characterData: true })
   })()`
 }
@@ -2743,14 +2964,18 @@ export function themeSettingsScript(): string {
       controls.dataset.dshThemeControls = 'true'
       controls.style.cssText = 'display:flex;flex-direction:column'
       // Fixed order via dedicated slots: wallpaper block first, then the
-      // opacity slider + cursor effects. Mounting order of the two injected
-      // controls is otherwise racy (observer-driven).
+      // opacity slider + cursor effects, then the desktop feature toggles.
+      // Mounting order of the injected controls is otherwise racy
+      // (observer-driven).
       const wallpaperSlot = document.createElement('div')
       wallpaperSlot.dataset.dshThemeWallpaperSlot = 'true'
       const alphaSlot = document.createElement('div')
       alphaSlot.dataset.dshThemeAlphaSlot = 'true'
+      const featureSlot = document.createElement('div')
+      featureSlot.dataset.dshThemeFeatureSlot = 'true'
       controls.appendChild(wallpaperSlot)
       controls.appendChild(alphaSlot)
+      controls.appendChild(featureSlot)
       group.appendChild(titleEl)
       group.appendChild(controls)
       panel.appendChild(group)

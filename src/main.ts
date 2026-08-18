@@ -14,7 +14,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shel
 // node-pty is a native module; loaded lazily so a missing/broken build does
 // not break the shell. The embedded terminal feature degrades gracefully.
 const require_ = createRequire(import.meta.url)
-import { alphaControlScript, ambientStyleScript, glassGuardScript, glassWindowOptions, inputHistoryScript, loadGlassSettings, saveGlassSettings, terminalScript, themeScript, themeSettingsScript, wallpaperControlScript, wallpaperLayerScript, whaleSprayScript, type GlassTheme } from './glass.ts'
+import { alphaControlScript, ambientStyleScript, featureControlScript, glassGuardScript, glassWindowOptions, inputHistoryScript, loadGlassSettings, saveGlassSettings, terminalScript, themeScript, themeSettingsScript, wallpaperControlScript, wallpaperLayerScript, whaleSprayScript, type GlassTheme } from './glass.ts'
 import { gitStatus } from './git-status.ts'
 import { detectExistingServer, resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
 import { mergePlugins, pluginsCssScript, readPluginDir } from './plugins.ts'
@@ -185,8 +185,26 @@ async function injectWallpaperControl(window: BrowserWindow): Promise<void> {
 }
 
 /**
+ * Inject the desktop-shell feature toggles into the hosted settings page,
+ * mounted below the wallpaper control inside the Theme Settings panel
+ * (主题设置): show/hide the file browser and terminal dock, and the brand
+ * color-switch interval. Choices are persisted in the renderer's localStorage
+ * and applied immediately via window events. Errors are non-fatal, the next
+ * did-finish-load re-injects.
+ * @param window - the window hosting the settings page.
+ */
+async function injectFeatureControl(window: BrowserWindow): Promise<void> {
+  try {
+    await window.webContents.executeJavaScript(featureControlScript())
+  } catch {
+    // Settings panel not ready; the next did-finish-load re-injects.
+  }
+}
+
+/**
  * Inject the ambient texture layers, floating sidebar/details cards, compact
- * new-session button, living brand (75px logo + 5s color cycling) and the
+ * new-session button, living brand (75px logo + configurable color cycling,
+ * default 10s) and the
  * hero glow animation into the hosted page. Platform-independent; errors are
  * non-fatal, the next did-finish-load re-injects.
  * @param window - the window hosting the page.
@@ -402,6 +420,7 @@ function createWindow(url: URL): void {
       void injectThemeSettings(window)
       void injectAlphaControl(window)
       void injectWallpaperControl(window)
+      void injectFeatureControl(window)
       void injectAmbientStyle(window)
       void injectPlugins(window)
       void injectTerminal(window)
