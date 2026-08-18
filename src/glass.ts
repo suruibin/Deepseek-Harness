@@ -596,13 +596,13 @@ export function ambientStyleScript(): string {
       // bubble's own box only) so sent messages match the composer family.
       '[class*=\"_bubble\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // Composer popup menus (model / access-mode / command pickers, e.g.
-      // _7KE1Ra_menu, _3e4SsG_menu): match the access-mode (Full access)
-      // menu exactly — an OPAQUE blue-gray rgb(39,46,62). The user compared
-      // the two and prefers the Full access look: the frosted translucency
-      // (0.35, later 0.5) made these menus read as see-through next to it.
-      // No backdrop-filter: the background is opaque, so a blur would be
-      // invisible work.
-      '[class*=\"_menu\"] { background-color: rgb(39,46,62) !important; }',
+      // _7KE1Ra_menu, _3e4SsG_menu) and the access-mode / reasoning-level
+      // list popups (_sideTop_ list, which lives inside the input card):
+      // repaint ALL of them with the same LIGHT blue-gray as the input card
+      // (rgb(72,82,100)) so the popups match the composer family. The
+      // _sideTop_ class is unique to the access-mode list (one match); the
+      // _menu pickers are the model/reasoning/command menus.
+      '[class*=\"_menu\"], [class*=\"_sideTop_\"] { background-color: rgb(72,82,100) !important; }',
       // The whole MAIN surface (everything except the settings panel): the
       // sidebar and the center conversation column get the same frosted glass
       // as the composer (driven by the 主界面毛玻璃 slider), so the whole
