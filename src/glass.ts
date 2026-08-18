@@ -573,16 +573,15 @@ export function ambientStyleScript(): string {
       '[class*=\"uV2eYG_card\"] { box-shadow: none !important; }',
       // Composer input card fill: DSH paints it with --dsw-specific-input-major
       // (an OPAQUE deep blue-gray). The 输入框毛玻璃 slider (主题设置 → 界面
-      // 毛玻璃) controls this independently: its base is a LIGHT blue-gray
-      // rgb(72,82,100) (the user prefers a pale input surface) at a user alpha
-      // 20..100% (100% = that pale gray, lower = more translucent frosted
-      // glass with blur). The blur rides the same radius as the other glass
-      // surfaces.
+      // 毛玻璃) controls this independently: base rgb(39,46,62) at a user
+      // alpha 20..100% (100% = that blue-gray, lower = more translucent
+      // frosted glass with blur). The blur rides the same radius as the other
+      // glass surfaces.
       // Once the seat is floated out of the scroll body (see
       // keepComposerFloating) the card's parent is a flex column that
       // stretches it to the full center-column width; restore the historical
       // centered 780px width.
-      '[class*=\"uV2eYG_card\"] { width: 780px !important; max-width: calc(100% - 16px) !important; margin-left: auto !important; margin-right: auto !important; background-color: var(--dsh-glass-input-bg, rgb(72,82,100)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      '[class*=\"uV2eYG_card\"] { width: 780px !important; max-width: calc(100% - 16px) !important; margin-left: auto !important; margin-right: auto !important; background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // Task progress strip above the composer (lXshSW_root): DSH paints it
       // with --dsw-specific-tip, an OPAQUE neutral (rgb(53,54,56)) that reads
       // as a solid slab on the glass canvas. Repaint it with the same frosted
@@ -600,10 +599,10 @@ export function ambientStyleScript(): string {
       // list popups (_sideTop_ list, which lives inside the input card):
       // repaint ALL of them with the SAME variable as the input card
       // (--dsh-glass-input-bg), so they follow the 输入框 slider exactly —
-      // at 100% they share the light blue-gray rgb(72,82,100), and lowering
-      // the slider makes both the input and its menus translucent together.
+      // at 100% they share the blue-gray rgb(39,46,62), and lowering the
+      // slider makes both the input and its menus translucent together.
       // The _sideTop_ class is unique to the access-mode list (one match).
-      '[class*=\"_menu\"], [class*=\"_sideTop_\"] { background-color: var(--dsh-glass-input-bg, rgb(72,82,100)) !important; }',
+      '[class*=\"_menu\"], [class*=\"_sideTop_\"] { background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; }',
       // The whole MAIN surface (everything except the settings panel): the
       // sidebar and the center conversation column get the same frosted glass
       // as the composer (driven by the 主界面毛玻璃 slider), so the whole
@@ -3069,15 +3068,12 @@ export function glassControlsScript(): string {
         document.head.appendChild(s)
       }
       const a = (v) => 'rgba(15,17,23,' + (v / 100).toFixed(3) + ')'
-      // Input card base is a LIGHT blue-gray (user prefers a pale surface
-      // instead of the deep rgb(39,46,62)); alpha 100 = that pale gray, lower
-      // alphas blend it toward the canvas.
       s.textContent = 'body { ' +
         '--dsh-glass-main-bg: ' + a(mainVal) + '; ' +
         '--dsh-glass-main-blur: 24px; ' +
         '--dsh-glass-settings-bg: ' + a(settingsVal) + '; ' +
         '--dsh-glass-settings-blur: 24px; ' +
-        '--dsh-glass-input-bg: rgba(72,82,100,' + (inputVal / 100).toFixed(3) + '); ' +
+        '--dsh-glass-input-bg: rgba(39,46,62,' + (inputVal / 100).toFixed(3) + '); ' +
       '}'
     }
     const mount = () => {
