@@ -577,7 +577,11 @@ export function ambientStyleScript(): string {
       // blue-gray rgb(39,46,62) at a user alpha 20..100% (100% = the opaque
       // look the user asked for, 20..99% = frosted glass with blur). The blur
       // rides the same radius as the other glass surfaces.
-      '[class*=\"uV2eYG_card\"] { background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      // Once the seat is floated out of the scroll body (see
+      // keepComposerFloating) the card's parent is a flex column that
+      // stretches it to the full center-column width; restore the historical
+      // centered 780px width.
+      '[class*=\"uV2eYG_card\"] { width: 780px !important; max-width: calc(100% - 16px) !important; margin-left: auto !important; margin-right: auto !important; background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // Task progress strip above the composer (lXshSW_root): DSH paints it
       // with --dsw-specific-tip, an OPAQUE neutral (rgb(53,54,56)) that reads
       // as a solid slab on the glass canvas. Repaint it with the same frosted
