@@ -597,12 +597,11 @@ export function ambientStyleScript(): string {
       // Composer popup menus (model / access-mode / command pickers, e.g.
       // _7KE1Ra_menu, _3e4SsG_menu) and the access-mode / reasoning-level
       // list popups (_sideTop_ list, which lives inside the input card):
-      // repaint ALL of them with the SAME variable as the input card
-      // (--dsh-glass-input-bg), so they follow the 输入框 slider exactly —
-      // at 100% they share the blue-gray rgb(39,46,62), and lowering the
-      // slider makes both the input and its menus translucent together.
-      // The _sideTop_ class is unique to the access-mode list (one match).
-      '[class*=\"_menu\"], [class*=\"_sideTop_\"] { background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; }',
+      // fixed OPAQUE rgb(39,46,62) — the user wants the popups to stay a
+      // solid blue-gray and NOT follow the 输入框 slider (only the input card
+      // itself is translucent). The _sideTop_ class is unique to the
+      // access-mode list (one match).
+      '[class*=\"_menu\"], [class*=\"_sideTop_\"] { background-color: rgb(39,46,62) !important; }',
       // The whole MAIN surface (everything except the settings panel): the
       // sidebar and the center conversation column get the same frosted glass
       // as the composer (driven by the 主界面毛玻璃 slider), so the whole
