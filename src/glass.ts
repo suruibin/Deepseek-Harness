@@ -572,12 +572,12 @@ export function ambientStyleScript(): string {
       // around the input box and clashes with the flat glass cards.
       '[class*=\"uV2eYG_card\"] { box-shadow: none !important; }',
       // Composer input card fill: DSH paints it with --dsw-specific-input-major
-      // (an OPAQUE deep blue-gray). The user found the frosted translucency
-      // (main-surface slider) too see-through while typing and asked for the
-      // same look as the Full access popup — an OPAQUE rgb(39,46,62). No
-      // backdrop-filter: the background is opaque, so a blur would be
-      // invisible work.
-      '[class*=\"uV2eYG_card\"] { background-color: rgb(39,46,62) !important; }',
+      // (an OPAQUE deep blue-gray). The 输入框毛玻璃 slider (主题设置 → 界面
+      // 毛玻璃) controls this independently: its color rides the Full access
+      // blue-gray rgb(39,46,62) at a user alpha 20..100% (100% = the opaque
+      // look the user asked for, 20..99% = frosted glass with blur). The blur
+      // rides the same radius as the other glass surfaces.
+      '[class*=\"uV2eYG_card\"] { background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // Task progress strip above the composer (lXshSW_root): DSH paints it
       // with --dsw-specific-tip, an OPAQUE neutral (rgb(53,54,56)) that reads
       // as a solid slab on the glass canvas. Repaint it with the same frosted
@@ -2996,7 +2996,7 @@ export function glassControlsScript(): string {
       window.__dshGlassControlObserver.disconnect()
       window.__dshGlassControlObserver = undefined
     }
-    const KEYS = { main: 'dsh-desktop-glass-main', settings: 'dsh-desktop-glass-settings' }
+    const KEYS = { main: 'dsh-desktop-glass-main', settings: 'dsh-desktop-glass-settings', input: 'dsh-desktop-glass-input' }
     const read = (key, fallback) => {
       try {
         const raw = localStorage.getItem(key)
@@ -3012,7 +3012,11 @@ export function glassControlsScript(): string {
     }
     let mainVal = Math.max(20, Math.min(60, read(KEYS.main, 35)))
     let settingsVal = Math.max(20, Math.min(60, read(KEYS.settings, 35)))
-    // One style node carries the four glass variables; ambientStyleScript's
+    // The input card's glass is independent: it rides the Full access blue-gray
+    // (rgb(39,46,62)) with a user alpha 20..100% (100 = the opaque look the
+    // user asked for).
+    let inputVal = Math.max(20, Math.min(100, read(KEYS.input, 100)))
+    // One style node carries the glass variables; ambientStyleScript's
     // rules reference them with the same values as defaults, so this node only
     // matters once the user deviates from the default.
     const applyVars = () => {
@@ -3028,6 +3032,7 @@ export function glassControlsScript(): string {
         '--dsh-glass-main-blur: 24px; ' +
         '--dsh-glass-settings-bg: ' + a(settingsVal) + '; ' +
         '--dsh-glass-settings-blur: 24px; ' +
+        '--dsh-glass-input-bg: rgba(39,46,62,' + (inputVal / 100).toFixed(3) + '); ' +
       '}'
     }
     const mount = () => {
@@ -3039,6 +3044,7 @@ export function glassControlsScript(): string {
         title: zh ? '界面毛玻璃' : 'Interface glass',
         main: zh ? '主界面毛玻璃' : 'Main surface',
         settings: zh ? '设置界面毛玻璃' : 'Settings surface',
+        input: zh ? '输入框毛玻璃' : 'Input surface',
       }
       const existing = document.querySelector('[data-dsh-glass-controls]')
       if (existing !== null) {
@@ -3049,6 +3055,7 @@ export function glassControlsScript(): string {
         sync('[data-dsh-glass-title]', labels.title)
         sync('[data-dsh-glass-main-label]', labels.main)
         sync('[data-dsh-glass-settings-label]', labels.settings)
+        sync('[data-dsh-glass-input-label]', labels.input)
         return
       }
       const control = document.createElement('div')
@@ -3068,6 +3075,11 @@ export function glassControlsScript(): string {
               '<input type="range" min="20" max="60" step="1" data-dsh-glass-settings style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-settings-fill,35%),rgba(65,118,230,0.22) var(--dsh-settings-fill,35%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
               '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-settings-val></span>' +
             '</div>' +
+            '<div style="display:flex;align-items:center;gap:12px">' +
+              '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-glass-input-label></span>' +
+              '<input type="range" min="20" max="100" step="1" data-dsh-glass-input style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-input-fill,100%),rgba(65,118,230,0.22) var(--dsh-input-fill,100%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
+              '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-input-val></span>' +
+            '</div>' +
           '</div>' +
         '</div>' +
         '<style>' +
@@ -3085,11 +3097,14 @@ export function glassControlsScript(): string {
       }
       sync('[data-dsh-glass-main-label]', labels.main)
       sync('[data-dsh-glass-settings-label]', labels.settings)
+      sync('[data-dsh-glass-input-label]', labels.input)
       const mainSlider = control.querySelector('[data-dsh-glass-main]')
       const settingsSlider = control.querySelector('[data-dsh-glass-settings]')
+      const inputSlider = control.querySelector('[data-dsh-glass-input]')
       const mainValEl = control.querySelector('[data-dsh-glass-main-val]')
       const settingsValEl = control.querySelector('[data-dsh-glass-settings-val]')
-      if (mainSlider === null || settingsSlider === null || mainValEl === null || settingsValEl === null) return
+      const inputValEl = control.querySelector('[data-dsh-glass-input-val]')
+      if (mainSlider === null || settingsSlider === null || inputSlider === null || mainValEl === null || settingsValEl === null || inputValEl === null) return
       const renderMain = () => {
         mainSlider.value = String(mainVal)
         mainValEl.textContent = mainVal + '%'
@@ -3099,6 +3114,11 @@ export function glassControlsScript(): string {
         settingsSlider.value = String(settingsVal)
         settingsValEl.textContent = settingsVal + '%'
         settingsSlider.style.setProperty('--dsh-settings-fill', ((settingsVal - 20) / 40 * 100).toFixed(1) + '%')
+      }
+      const renderInput = () => {
+        inputSlider.value = String(inputVal)
+        inputValEl.textContent = inputVal + '%'
+        inputSlider.style.setProperty('--dsh-input-fill', ((inputVal - 20) / 80 * 100).toFixed(1) + '%')
       }
       mainSlider.addEventListener('input', () => {
         mainVal = Math.round(Number(mainSlider.value))
@@ -3112,8 +3132,15 @@ export function glassControlsScript(): string {
         renderSettings()
         applyVars()
       })
+      inputSlider.addEventListener('input', () => {
+        inputVal = Math.round(Number(inputSlider.value))
+        write(KEYS.input, inputVal)
+        renderInput()
+        applyVars()
+      })
       renderMain()
       renderSettings()
+      renderInput()
       const holder = panel.querySelector('[data-dsh-theme-glass-slot]') || panel
       holder.appendChild(control)
     }
