@@ -2660,19 +2660,34 @@ export function wallpaperControlScript(): string {
         }
         // ── Thumbnail grid: 3 columns, 2 visible rows, vertical scroll ──
         // Cells load their thumbnails lazily (IntersectionObserver) so a
-        // large folder does not decode every image up front.
-        let thumbObs = null
-        const loadThumb = (cell) => {
-          if (cell.dataset.loaded === '1') return
-          cell.dataset.loaded = '1'
+        // large folder does not decode every image up front. Requests are
+        // also SERIALIZED (one in flight): each decode is a synchronous
+        // nativeImage pass on the main process, so concurrent requests
+        // freeze the window (measured 756ms IPC stall while the grid loaded);
+        // a queue keeps the main process responsive and thumbnails fill in
+        // gradually.
+        const thumbQueue = []
+        let thumbBusy = false
+        const pumpThumbs = () => {
+          if (thumbBusy || thumbQueue.length === 0) return
+          const cell = thumbQueue.shift()
+          thumbBusy = true
           window.dshDesktop.wallpaper.thumb(cell.dataset.path).then((res) => {
-            if (!cell.isConnected) return
-            if (res !== null && typeof res === 'object' && typeof res.url === 'string') {
+            if (cell.isConnected && res !== null && typeof res === 'object' && typeof res.url === 'string') {
               const img = cell.querySelector('img')
               if (img !== null) img.src = res.url
             }
-          }).catch(() => {})
+            thumbBusy = false
+            pumpThumbs()
+          }).catch(() => { thumbBusy = false; pumpThumbs() })
         }
+        const loadThumb = (cell) => {
+          if (cell.dataset.loaded === '1') return
+          cell.dataset.loaded = '1'
+          thumbQueue.push(cell)
+          pumpThumbs()
+        }
+        let thumbObs = null
         const computeGridH = () => {
           // 2 rows of 16:10 cells + one 6px gap.
           const cellW = (grid.clientWidth - 12) / 3
@@ -2756,15 +2771,20 @@ export function wallpaperControlScript(): string {
             apply(url, typeof res.file === 'string' ? res.file : null, null)
           }
         }).catch(() => {})
-        // Restore the last browsed folder's grid without reopening the dialog.
+        // Restore the last browsed folder's grid without reopening the
+        // dialog. Delayed ~350ms so the panel switch animation settles before
+        // the grid starts decoding thumbnails (the decode queue otherwise
+        // competes with the transition and reads as a hitch).
         const lastFolder = (() => { try { return localStorage.getItem('dsh-desktop-wallpaper-folder') } catch { return null } })()
         if (lastFolder !== null && lastFolder !== '') {
-          window.dshDesktop.fs.list(lastFolder).then((res) => {
-            if (res === null || typeof res !== 'object' || res.error || !Array.isArray(res.entries)) return
-            const imgs = res.entries.filter((e) => e && typeof e.name === 'string' && /\.(png|jpe?g|webp|gif|bmp)$/i.test(e.name)).map((e) => ({ name: e.name, path: e.path }))
-            nameEl.textContent = typeof res.path === 'string' ? res.path : ''
-            renderGrid(imgs)
-          }).catch(() => {})
+          setTimeout(() => {
+            window.dshDesktop.fs.list(lastFolder).then((res) => {
+              if (res === null || typeof res !== 'object' || res.error || !Array.isArray(res.entries)) return
+              const imgs = res.entries.filter((e) => e && typeof e.name === 'string' && /\.(png|jpe?g|webp|gif|bmp)$/i.test(e.name)).map((e) => ({ name: e.name, path: e.path }))
+              nameEl.textContent = typeof res.path === 'string' ? res.path : ''
+              renderGrid(imgs)
+            }).catch(() => {})
+          }, 350)
         }
       // Mount inside the Theme Settings panel's dedicated wallpaper slot (the
       // first block in the panel, above the brand color-switch interval).
@@ -3247,35 +3267,31 @@ export function themeSettingsScript(): string {
       panel.style.cssText = 'display:flex;flex-direction:column'
       const group = document.createElement('div')
       group.style.cssText = 'display:flex;flex-direction:column;gap:4px;padding:0 4px'
-      const titleEl = document.createElement('div')
-      if (sample !== null) {
-        const t = sample.querySelector('[class*="_title"]')
-        if (t !== null) titleEl.className = t.className
-      }
-      titleEl.textContent = themeTitle()
+      // No panel title here: the sidebar nav already says 主题设置, so a
+      // repeated heading above the first control (背景壁纸) is redundant.
       const controls = document.createElement('div')
       controls.dataset.dshThemeControls = 'true'
       controls.style.cssText = 'display:flex;flex-direction:column'
-      // Fixed order via dedicated slots: wallpaper block first, then the
-      // brand color-switch interval, then the opacity slider + cursor
-      // effects, then the panel visibility toggles. Mounting order of the
-      // injected controls is otherwise racy (observer-driven).
-      const wallpaperSlot = document.createElement('div')
-      wallpaperSlot.dataset.dshThemeWallpaperSlot = 'true'
+      // Fixed order via dedicated slots: interface glass first (the most
+      // used control), then the brand color-switch interval (before the
+      // opacity slider per user preference), the opacity slider, the
+      // wallpaper block, and the panel-visibility toggles last. Mounting
+      // order of the injected controls is otherwise racy (observer-driven).
+      const glassSlot = document.createElement('div')
+      glassSlot.dataset.dshThemeGlassSlot = 'true'
       const cycleSlot = document.createElement('div')
       cycleSlot.dataset.dshThemeCycleSlot = 'true'
       const alphaSlot = document.createElement('div')
       alphaSlot.dataset.dshThemeAlphaSlot = 'true'
+      const wallpaperSlot = document.createElement('div')
+      wallpaperSlot.dataset.dshThemeWallpaperSlot = 'true'
       const featureSlot = document.createElement('div')
       featureSlot.dataset.dshThemeFeatureSlot = 'true'
-      const glassSlot = document.createElement('div')
-      glassSlot.dataset.dshThemeGlassSlot = 'true'
-      controls.appendChild(wallpaperSlot)
+      controls.appendChild(glassSlot)
       controls.appendChild(cycleSlot)
       controls.appendChild(alphaSlot)
+      controls.appendChild(wallpaperSlot)
       controls.appendChild(featureSlot)
-      controls.appendChild(glassSlot)
-      group.appendChild(titleEl)
       group.appendChild(controls)
       panel.appendChild(group)
       options.appendChild(panel)

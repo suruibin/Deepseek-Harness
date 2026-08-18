@@ -940,14 +940,31 @@ if (!app.requestSingleInstanceLock()) {
   // Render a thumbnail data URL for one image (decode + downscale). Called
   // lazily by the renderer grid; SVG and undecodable files resolve `{ error }`
   // and the cell shows an empty tile.
+  //
+  // nativeImage.createFromPath decodes the FULL image synchronously — several
+  // concurrent decodes of multi-MiB wallpapers block the main process and
+  // freeze every other IPC (the renderer observed a 756ms latency spike while
+  // the grid loaded). Two mitigations live here: (1) a per-path cache keyed
+  // by mtime, so each image is decoded at most once per session; (2) the
+  // renderer serializes its requests (one decode in flight). The cache is
+  // capped so a huge folder cannot grow it unbounded.
+  const thumbCache = new Map<string, { mtimeMs: number; url: string }>()
   ipcMain.handle('dsh:wallpaper-thumb', async (_event, rawPath: unknown) => {
     if (typeof rawPath !== 'string' || rawPath === '') return { error: 'invalid path' }
     try {
+      const { statSync } = await import('node:fs')
+      let mtimeMs = 0
+      try { mtimeMs = statSync(rawPath).mtimeMs } catch { /* unreadable; decode anyway */ }
+      const hit = thumbCache.get(rawPath)
+      if (hit !== undefined && hit.mtimeMs === mtimeMs) return { url: hit.url }
       const image = nativeImage.createFromPath(rawPath)
       if (image.isEmpty()) return { error: 'cannot decode image' }
       const size = image.getSize()
       const resized = size.width > 360 ? image.resize({ width: 360 }) : image
-      return { url: resized.toDataURL() }
+      const url = resized.toDataURL()
+      if (thumbCache.size >= 200) thumbCache.clear()
+      thumbCache.set(rawPath, { mtimeMs, url })
+      return { url }
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) }
     }
