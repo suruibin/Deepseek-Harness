@@ -572,17 +572,12 @@ export function ambientStyleScript(): string {
       // around the input box and clashes with the flat glass cards.
       '[class*=\"uV2eYG_card\"] { box-shadow: none !important; }',
       // Composer input card fill: DSH paints it with --dsw-specific-input-major
-      // (an OPAQUE deep blue-gray), which reads as a solid slab floating on
-      // the translucent glass canvas — jarring next to the semi-transparent
-      // center column. Repaint it with a slightly deeper frosted glass so the
-      // input surface is clearly visible as a distinct frosted pane (alpha
-      // 0.35 over the canvas, not the barely-there 0.224), while text/buttons
-      // keep their own opaque fills for readability. The frosted (blur)
-      // effect applies ONLY inside the card's own border box — the row around
-      // it keeps the plain canvas background. The alpha/blur come from the
-      // "主界面毛玻璃" slider (主题设置 → 界面毛玻璃), defaulting to the
-      // historical values.
-      '[class*=\"uV2eYG_card\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      // (an OPAQUE deep blue-gray). The user found the frosted translucency
+      // (main-surface slider) too see-through while typing and asked for the
+      // same look as the Full access popup — an OPAQUE rgb(39,46,62). No
+      // backdrop-filter: the background is opaque, so a blur would be
+      // invisible work.
+      '[class*=\"uV2eYG_card\"] { background-color: rgb(39,46,62) !important; }',
       // Task progress strip above the composer (lXshSW_root): DSH paints it
       // with --dsw-specific-tip, an OPAQUE neutral (rgb(53,54,56)) that reads
       // as a solid slab on the glass canvas. Repaint it with the same frosted
