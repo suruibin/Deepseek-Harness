@@ -601,6 +601,14 @@ export function ambientStyleScript(): string {
       // with the same main-surface frosted glass as the input card, driven by
       // the 主界面毛玻璃 slider.
       '[class*=\"_menu\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      // The whole MAIN surface (everything except the settings panel): the
+      // sidebar and the center conversation column get the same frosted glass
+      // as the composer (driven by the 主界面毛玻璃 slider), so the whole
+      // window reads as one glass family instead of a translucent pane with a
+      // few frosted islands. Both classes are stable layout suffixes (one
+      // match each); a blanket [class*="_root"] under the center column would
+      // hit every message/tool-call block.
+      '[class*=\"_sidebarCol\"], [class*=\"_centerCol\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // Hosted settings panel (VOzbGW_panel, tagged data-dsh-settings-panel by
       // themeSettingsScript): DSH paints it with an OPAQUE blue-gray
       // (rgb(32,38,52)). Give the SETTINGS surface its own frosted glass,
@@ -1565,10 +1573,11 @@ export function terminalScript(): string {
     termDock.id = 'dsh-terminal-dock'
     termDock.style.cssText = [
       'position:fixed', 'left:' + sidebarRight + 'px', 'right:0', 'bottom:0', 'height:' + DOCK_H + 'px', 'z-index:9998',
-      'display:none', 'background:var(--dsw-specific-panel-fill, rgba(15,17,23,0.224))', 'box-sizing:border-box',
-      // NO backdrop-filter: same rationale as the file panel — the underlay
-      // gives the dock the center column's depth; a blur would read as a
-      // different transparency and seam against the un-blurred gutters.
+      'display:none', 'background:var(--dsh-glass-main-bg, rgba(15,17,23,0.35))', 'box-sizing:border-box',
+      // Frosted like the rest of the main surface: the 主界面毛玻璃 slider
+      // controls alpha, the blur rides the same variable as the composer.
+      'backdrop-filter:blur(var(--dsh-glass-main-blur, 24px)) saturate(140%)',
+      '-webkit-backdrop-filter:blur(var(--dsh-glass-main-blur, 24px)) saturate(140%)',
       'border-top:1px solid rgba(65,118,230,0.22)',
       'flex-direction:column', 'font-size:13px',
     ].join(';')
@@ -2029,14 +2038,13 @@ export function terminalScript(): string {
     filesPanel.id = 'dsh-files-panel'
     filesPanel.style.cssText = [
       'position:fixed', 'top:8px', 'right:' + FILES_RIGHT + 'px', 'bottom:8px', 'width:340px', 'z-index:9997',
-      'display:none', 'background:var(--dsw-specific-panel-fill, rgba(15,17,23,0.224))', 'box-sizing:border-box',
-      // NO backdrop-filter: the underlay already supplies the second glass
-      // layer, so the panel composites to the same depth as the center column
-      // (three a-layers ≈ 0.533) and its surroundings to 0.398. A blur here
-      // would (a) make the panel read as a different, "frostier" transparency
-      // than the center column/input bar, and (b) at its left edge create a
-      // visible vertical seam against the un-blurred gutter (verified on
-      // screen: the seam spans the header height and disappears without blur).
+      'display:none', 'background:var(--dsh-glass-main-bg, rgba(15,17,23,0.35))', 'box-sizing:border-box',
+      // Frosted like the rest of the main surface (主界面毛玻璃 slider): the
+      // underlay below still supplies the second glass layer so the panel's
+      // surroundings keep the two-layer depth, and the blur now matches the
+      // center column/input card family instead of seaming against it.
+      'backdrop-filter:blur(var(--dsh-glass-main-blur, 24px)) saturate(140%)',
+      '-webkit-backdrop-filter:blur(var(--dsh-glass-main-blur, 24px)) saturate(140%)',
       'border-radius:16px',
       // NO box-shadow: the panel floats a few px right of the center column
       // (FILES_GAP), and a shadow spreading leftward toward that gutter would
