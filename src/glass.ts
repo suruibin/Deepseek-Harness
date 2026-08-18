@@ -3042,9 +3042,9 @@ export function glassControlsScript(): string {
       const zh = window.__dshThemeLocale !== 'en'
       const labels = {
         title: zh ? '界面毛玻璃' : 'Interface glass',
-        main: zh ? '主界面毛玻璃' : 'Main surface',
-        settings: zh ? '设置界面毛玻璃' : 'Settings surface',
-        input: zh ? '输入框毛玻璃' : 'Input surface',
+        main: zh ? '主界面' : 'Main surface',
+        settings: zh ? '设置界面' : 'Settings surface',
+        input: zh ? '输入框' : 'Input surface',
       }
       const existing = document.querySelector('[data-dsh-glass-controls]')
       if (existing !== null) {
