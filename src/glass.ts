@@ -3410,11 +3410,17 @@ export function themeSettingsScript(): string {
       wallpaperSlot.dataset.dshThemeWallpaperSlot = 'true'
       const featureSlot = document.createElement('div')
       featureSlot.dataset.dshThemeFeatureSlot = 'true'
+      const decorSlot = document.createElement('div')
+      decorSlot.dataset.dshThemeDecorSlot = 'true'
+      const hoverSlot = document.createElement('div')
+      hoverSlot.dataset.dshThemeHoverSlot = 'true'
       controls.appendChild(glassSlot)
       controls.appendChild(cycleSlot)
       controls.appendChild(alphaSlot)
       controls.appendChild(wallpaperSlot)
       controls.appendChild(featureSlot)
+      controls.appendChild(decorSlot)
+      controls.appendChild(hoverSlot)
       group.appendChild(controls)
       panel.appendChild(group)
       options.appendChild(panel)

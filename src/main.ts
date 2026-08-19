@@ -15,6 +15,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shel
 // not break the shell. The embedded terminal feature degrades gracefully.
 const require_ = createRequire(import.meta.url)
 import { alphaControlScript, ambientStyleScript, featureControlScript, glassControlsScript, glassGuardScript, glassWindowOptions, inputHistoryScript, loadGlassSettings, saveGlassSettings, terminalScript, themeScript, themeSettingsScript, wallpaperControlScript, wallpaperLayerScript, whaleSprayScript, type GlassTheme } from './glass.ts'
+import { ambientDecorScript } from './ambient.ts'
 import { gitStatus } from './git-status.ts'
 import { detectExistingServer, resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
 import { mergePlugins, pluginsCssScript, readPluginDir } from './plugins.ts'
@@ -247,6 +248,20 @@ async function injectAmbientStyle(window: BrowserWindow): Promise<void> {
 }
 
 /**
+ * Inject the ambient decoration engine (particle whale / marine life /
+ * interactive mesh) and its 环境装饰 toggle group into the hosted page.
+ * Errors are non-fatal; the next did-finish-load re-injects.
+ * @param window - the window hosting the page.
+ */
+async function injectAmbientDecor(window: BrowserWindow): Promise<void> {
+  try {
+    await window.webContents.executeJavaScript(ambientDecorScript())
+  } catch {
+    // Page not ready; the next did-finish-load re-injects.
+  }
+}
+
+/**
  * Inject user plugins into the hosted page. Plugins are CSS/JS files loaded
  * from two directories, merged with user files taking precedence over the
  * built-in ones (see `src/plugins.ts`):
@@ -440,6 +455,7 @@ function createWindow(url: URL): void {
       void injectFeatureControl(window)
       void injectGlassControls(window)
       void injectAmbientStyle(window)
+      void injectAmbientDecor(window)
       void injectPlugins(window)
       void injectTerminal(window)
     }, 800)
