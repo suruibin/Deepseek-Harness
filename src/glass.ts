@@ -635,7 +635,15 @@ export function ambientStyleScript(): string {
       // is uniform from the logo row to the footer — no more visible seam
       // above the settings button), yet a pseudo-element is not a DOM
       // ancestor, so the overlay's containing block stays the viewport.
-      '[class*=\"_centerCol\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      '[class*=\"_centerCol\"] { position: relative !important; background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; }',
+      // The center column's blur rides a ::before pseudo-element (same
+      // pattern as the sidebar), NOT the column itself: a backdrop-filter on
+      // the element forces the compositor to re-sample everything below it
+      // whenever the ambient layer animates, re-rasterizing the whole column
+      // (text included) every frame — the "whole interface flickers" bug.
+      // On the pseudo-element the sampled layer is separate from the content
+      // layer, so ambient animation never repaints the messages.
+      '[class*=\"_centerCol\"]::before { content: \"\" !important; position: absolute !important; inset: 0 !important; border-radius: inherit !important; pointer-events: none !important; z-index: -1 !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // The center column's inner root (wSkVaW_root) keeps the SPA's own
       // rgba(15,17,23,0.224) fill, stacking ANOTHER translucent layer on top
       // of the --dsh-glass-main-bg on the column — so at low main-surface
@@ -3427,8 +3435,6 @@ export function themeSettingsScript(): string {
       wallpaperSlot.dataset.dshThemeWallpaperSlot = 'true'
       const featureSlot = document.createElement('div')
       featureSlot.dataset.dshThemeFeatureSlot = 'true'
-      const decorSlot = document.createElement('div')
-      decorSlot.dataset.dshThemeDecorSlot = 'true'
       const hoverSlot = document.createElement('div')
       hoverSlot.dataset.dshThemeHoverSlot = 'true'
       controls.appendChild(glassSlot)
@@ -3436,7 +3442,6 @@ export function themeSettingsScript(): string {
       controls.appendChild(alphaSlot)
       controls.appendChild(wallpaperSlot)
       controls.appendChild(featureSlot)
-      controls.appendChild(decorSlot)
       controls.appendChild(hoverSlot)
       group.appendChild(controls)
       panel.appendChild(group)
