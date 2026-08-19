@@ -1437,11 +1437,12 @@ export function terminalScript(): string {
     const topbarStyle = document.createElement('style')
     topbarStyle.id = 'dsh-topbar-style'
     topbarStyle.textContent = [
-      '[class*="_centerCol"] header { height: 64px !important; padding: 2px 0 0 !important; }',
-      '[class*="_centerCol"] header [class*="_titleRow"] { position: relative !important; height: 30px !important; padding: 0 !important; }',
+      '[class*="_centerCol"] header { height: 52px !important; padding: 2px 0 0 !important; }',
+      '[class*="_centerCol"] header [class*="_titleRow"] { position: relative !important; height: 24px !important; min-height: 24px !important; padding: 0 !important; }',
       '[class*="_centerCol"] header [class*="_titleCluster"] { position: absolute !important; left: 50% !important; transform: translateX(-50%) !important; width: auto !important; flex: none !important; }',
       '[class*="_centerCol"] header [class*="_headerUtilities"] { margin-left: auto !important; }',
-      '[class*="_centerCol"] header [class*="_tabs"] { height: 26px !important; }',
+      '[class*="_centerCol"] header [class*="_tabs"] { height: 20px !important; }',
+      '[class*="_centerCol"] header [class*="_tab"] { padding-bottom: 5px !important; }',
     ].join(' ')
     document.head.appendChild(topbarStyle)
     // Session log: move it from the top-right to the sidebar footer, right
