@@ -109,15 +109,8 @@ export function glassWindowOptions(platform: NodeJS.Platform): BrowserWindowCons
     case 'darwin':
       return { vibrancy: 'under-window', transparent: true }
     default:
-      // Linux: the window was transparent (ARGB) as the carrier for the
-      // glass tint, but a transparent surface under Wayland makes the
-      // compositor re-composite the whole window on every buffer commit and
-      // is a known source of whole-window flicker (the glass itself lives in
-      // page CSS — backdrop-filter + translucent fills over the wallpaper —
-      // so it does not need window transparency). An opaque window with a
-      // deep-blue backdrop keeps the exact same look with a wallpaper and a
-      // clean base when the wallpaper is cleared.
-      return { transparent: false, frame: false, backgroundColor: '#0f1117' }
+      // Linux: transparency is the carrier; the glass tint lives in page CSS.
+      return { transparent: true, frame: false }
   }
 }
 
