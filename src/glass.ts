@@ -494,6 +494,19 @@ export function ambientStyleScript(): string {
       '[class*=\"_centerCol\"] [class*=\"_root\"] {',
       '  border-radius: 12px !important;',
       '}',
+      // Conversation header (session title + 对话/轨迹 tabs + 标准模式):
+      // a floating glass card rounded on all four corners, matching the
+      // sidebar/center cards. Its glass follows the SIDEBAR slider (per
+      // user preference), so it stays visible even when the main-surface
+      // slider is low.
+      '[class*=\"_centerCol\"] header {',
+      '  background: var(--dsh-glass-sidebar-bg, rgba(15,17,23,0.35)) !important;',
+      '  backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important;',
+      '  -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important;',
+      '  border-radius: 14px !important;',
+      '  margin: 6px 10px 0 !important;',
+      '  overflow: hidden !important;',
+      '}',
       // Details panel (对话 / 轨迹 / Session log): same floating-card look,
       // compact height so it does not butt against the window top edge.
       // NO drop shadow: its leftward spread lands on the center column's
