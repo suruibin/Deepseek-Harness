@@ -64,19 +64,23 @@ export function ambientDecorScript(): string {
     const isDark = () => document.body.hasAttribute('data-ds-dark-theme')
 
     // ── CSS:环境装饰样式(唯一注入一次) ──
+    // NOTE: no opacity "breathe" animation on the container — animating the
+    // ambient layer's opacity (even 9s slow) forces the compositor to
+    // re-rasterize the whole layer (canvas + critters) against the blurred
+    // wallpaper / glass layers below and makes the interface flicker. The
+    // container and canvases get explicit composite layers (translateZ(0))
+    // so canvas redraws never bubble up to the page.
     const CSS = [
-      '#dsh-dt-ambient{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden}',
-      '@media (prefers-reduced-motion: no-preference){#dsh-dt-ambient{animation:dsh-ambient-breathe 9s var(--ds-ease-in-out,ease-in-out) infinite alternate}}',
-      '@keyframes dsh-ambient-breathe{from{opacity:0.86}to{opacity:1}}',
+      '#dsh-dt-ambient{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden;transform:translateZ(0)}',
       '#dsh-dt-ambient [data-dsh-ambient-whale]{position:absolute;transform:translate(-50%,-50%);pointer-events:none;mix-blend-mode:screen;opacity:0.92}',
       '#dsh-dt-ambient [data-dsh-ambient-whale][data-scheme="light"]{mix-blend-mode:multiply}',
-      '#dsh-dt-ambient [data-dsh-ambient-whale] canvas{display:block;width:100%;height:100%}',
-      '#dsh-dt-ambient [data-dsh-ambient-mesh]{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}',
+      '#dsh-dt-ambient [data-dsh-ambient-whale] canvas{display:block;width:100%;height:100%;transform:translateZ(0)}',
+      '#dsh-dt-ambient [data-dsh-ambient-mesh]{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;transform:translateZ(0)}',
       '#dsh-dt-ambient[data-critters="off"] [data-aqua-critter]{display:none}',
-      '#dsh-dt-ambient [data-aqua-critter]{position:absolute;color:#7ea4df;opacity:0.22}',
+      '#dsh-dt-ambient [data-aqua-critter]{position:absolute;color:#7ea4df;opacity:0.22;will-change:transform}',
       '#dsh-dt-ambient [data-aqua-critter="fish"]{animation:dsh-aqua-fish-swim 12s var(--ds-ease-in-out,ease-in-out) infinite}',
       '#dsh-dt-ambient [data-aqua-critter="fish-left"]{animation:dsh-aqua-fish-swim-left 16s var(--ds-ease-in-out,ease-in-out) infinite}',
-      '#dsh-dt-ambient [data-aqua-critter="bubble"]{color:#a9c6ef;opacity:0;animation:dsh-aqua-bubble-rise 9s ease-in infinite}',
+      '#dsh-dt-ambient [data-aqua-critter="bubble"]{color:#a9c6ef;opacity:0;animation:dsh-aqua-bubble-rise 9s ease-in infinite;will-change:transform,opacity}',
       '#dsh-dt-ambient [data-aqua-critter="plankton"]{color:#7ea4df;animation:dsh-aqua-plankton 5s ease-in-out infinite}',
       '@keyframes dsh-aqua-fish-swim{0%{transform:translate3d(0,0,0) rotate(-5deg)}30%{transform:translate3d(40px,-15px,0) rotate(4deg)}70%{transform:translate3d(52px,-18px,0) rotate(3deg)}100%{transform:translate3d(0,0,0) rotate(-5deg)}}',
       '@keyframes dsh-aqua-fish-swim-left{0%{transform:translate3d(0,0,0) scaleX(-1) rotate(-5deg)}30%{transform:translate3d(-34px,-12px,0) scaleX(-1) rotate(4deg)}70%{transform:translate3d(-44px,-15px,0) scaleX(-1) rotate(3deg)}100%{transform:translate3d(0,0,0) scaleX(-1) rotate(-5deg)}}',
@@ -147,9 +151,17 @@ export function ambientDecorScript(): string {
       let scale = 1
       let width = 0
       let height = 0
+      // Cache the [data-phase] anchor (re-read on resize) instead of a
+      // querySelector + layout read every frame — that read at 30fps forces
+      // sync layout against the shell's own style writes (flicker risk).
+      let phaseRef = null
+      const refreshPhase = () => {
+        phaseRef = document.querySelector('[data-phase]')
+      }
+      refreshPhase()
+      let frameCount = 0
       const positionHost = () => {
-        const phase = document.querySelector('[data-phase]')
-        const rect = phase !== null ? phase.getBoundingClientRect() : undefined
+        const rect = phaseRef !== null ? phaseRef.getBoundingClientRect() : undefined
         const r = (rect !== undefined && rect.width > 0)
           ? rect
           : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
@@ -321,7 +333,10 @@ export function ambientDecorScript(): string {
             return
           }
           last = now - ((now - last) % (1000 / FPS))
-          positionHost()
+          // Re-center at most every ~0.4s (30fps × 12) — the anchor rarely
+          // moves, and a per-frame layout read is the flicker risk.
+          frameCount++
+          if (frameCount % 12 === 0) positionHost()
           const elapsed = (now - startedAt) / 1000
           const raw = Math.min(1, Math.max(0, (elapsed - 0.3) / 2.5))
           const D = 1 - Math.pow(1 - raw, 3)
@@ -336,7 +351,11 @@ export function ambientDecorScript(): string {
         raf = requestAnimationFrame(step)
       }
       resize()
-      window.addEventListener('resize', resize)
+      const onResize = () => {
+        refreshPhase()
+        resize()
+      }
+      window.addEventListener('resize', onResize)
       const img = new Image()
       img.onload = () => {
         if (disposed) return
@@ -366,7 +385,7 @@ export function ambientDecorScript(): string {
           disposed = true
           cancelAnimationFrame(raf)
           window.removeEventListener('pointermove', onMove)
-          window.removeEventListener('resize', resize)
+          window.removeEventListener('resize', onResize)
           holder.remove()
         },
       }
