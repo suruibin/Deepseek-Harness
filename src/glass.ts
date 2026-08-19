@@ -507,6 +507,9 @@ export function ambientStyleScript(): string {
       '  margin: 6px 10px 0 !important;',
       '  overflow: hidden !important;',
       '}',
+      // The SPA paints a 1px white hairline (header::after) along the bottom
+      // edge — with the floating glass card it reads as a stray bright line.
+      '[class*=\"_centerCol\"] header::after { display: none !important; }',
       // Details panel (对话 / 轨迹 / Session log): same floating-card look,
       // compact height so it does not butt against the window top edge.
       // NO drop shadow: its leftward spread lands on the center column's
