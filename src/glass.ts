@@ -630,7 +630,7 @@ export function ambientStyleScript(): string {
       // is running is another popup family member and follows the same rule;
       // its inner _7yHdaG_panel paints --dsw-specific-tip (opaque gray), so
       // both the dock shell and the visible panel get the popup glass.
-      '[class*=\"_menu\"], [class*=\"_sideTop_\"], [class*=\"_7yHdaG_dock\"], [class*=\"_7yHdaG_panel\"] { background-color: var(--dsh-glass-popup-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      '[class*=\"_menu\"], [class*=\"_sideTop_\"], [class*=\"_7yHdaG_dock\"], [class*=\"_7yHdaG_panel\"] { background-color: var(--dsh-glass-popup-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; }',
       // The whole MAIN surface (everything except the settings panel): the
       // sidebar and the center conversation column get the same frosted glass
       // as the composer (driven by the 主界面毛玻璃 slider), so the whole
@@ -3179,6 +3179,7 @@ export function glassControlsScript(): string {
         '--dsh-glass-input-bg: rgba(39,46,62,' + (inputVal / 100).toFixed(3) + '); ' +
         '--dsh-glass-sidebar-bg: ' + a(sidebarVal) + '; ' +
         '--dsh-glass-popup-bg: rgba(39,46,62,' + (popupVal / 100).toFixed(3) + '); ' +
+        '--dsh-glass-popup-blur: 40px; ' +
       '}'
     }
     const mount = () => {
