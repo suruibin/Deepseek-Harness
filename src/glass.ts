@@ -309,7 +309,7 @@ export function alphaControlScript(): string {
         control.innerHTML =
           '<div style="color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px"></div>' +
           '<div style="display:flex;align-items:center;gap:12px">' +
-            '<input type="range" min="0.4" max="1" step="0.05" style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-alpha-fill,40%),rgba(65,118,230,0.22) var(--dsh-alpha-fill,40%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
+            '<input type="range" min="0" max="1" step="0.05" style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-alpha-fill,0%),rgba(65,118,230,0.22) var(--dsh-alpha-fill,0%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
             '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;min-width:44px;text-align:right"></span>' +
           '</div>' +
           '<div data-dsh-cursor-fx style="flex-direction:column;gap:10px;display:flex;margin-top:8px">' +
@@ -344,7 +344,7 @@ export function alphaControlScript(): string {
             '[data-dsh-glass-alpha] input[type=range]:hover::-webkit-slider-thumb{box-shadow:0 1px 6px rgba(15,20,35,0.4),0 0 0 5px rgba(65,118,230,0.22)}' +
             '[data-dsh-glass-alpha] input[type=range]:active::-webkit-slider-thumb{transform:scale(1.1)}' +
             '[data-dsh-glass-alpha] input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #4176e6;box-shadow:0 1px 4px rgba(15,20,35,0.35);cursor:pointer}' +
-            '[data-dsh-glass-alpha] input[type=range]::-moz-range-track{height:6px;border-radius:999px;background:linear-gradient(90deg,#4176e6 var(--dsh-alpha-fill,40%),rgba(65,118,230,0.22) var(--dsh-alpha-fill,40%))}' +
+            '[data-dsh-glass-alpha] input[type=range]::-moz-range-track{height:6px;border-radius:999px;background:linear-gradient(90deg,#4176e6 var(--dsh-alpha-fill,0%),rgba(65,118,230,0.22) var(--dsh-alpha-fill,0%))}' +
           '</style>'
         const titleEl = control.firstElementChild
         if (titleEl !== null) titleEl.textContent = title
@@ -353,7 +353,7 @@ export function alphaControlScript(): string {
         if (input === null || label === null) return
         const render = (value) => {
           label.textContent = Math.round(value * 100) + '%'
-          const pct = ((value - 0.4) / (1 - 0.4)) * 100
+          const pct = value * 100
           input.style.setProperty('--dsh-alpha-fill', pct.toFixed(1) + '%')
         }
         let raf = 0
@@ -364,7 +364,7 @@ export function alphaControlScript(): string {
           raf = requestAnimationFrame(() => { window.dshDesktop.setAlpha(value) })
         })
         window.dshDesktop.getAlpha().then((value) => {
-          const clamped = Math.min(1, Math.max(0.4, value))
+          const clamped = Math.min(1, Math.max(0, value))
           input.value = String(clamped)
           render(clamped)
         }).catch(() => {})
@@ -505,7 +505,11 @@ export function ambientStyleScript(): string {
       '  -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important;',
       '  border-radius: 14px !important;',
       '  margin: 6px 10px 0 !important;',
-      '  overflow: hidden !important;',
+      // NOTE: no overflow:hidden here — it clipped the 后台任务 jobs menu
+      // (QsffPG_menu, absolute below the trigger) because the menu extends
+      // past the header's box; the header::after hairline that overflow used
+      // to clip is already display:none below, and background follows
+      // border-radius on its own, so nothing regresses visually.
       '}',
       // The SPA paints a 1px white hairline (header::after) along the bottom
       // edge — with the floating glass card it reads as a stray bright line.
@@ -605,6 +609,11 @@ export function ambientStyleScript(): string {
       // stretches it to the full center-column width; restore the historical
       // centered 780px width.
       '[class*=\"uV2eYG_card\"] { width: 780px !important; max-width: calc(100% - 16px) !important; margin-left: auto !important; margin-right: auto !important; background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      // Queued-message dock (插话发送, _7yHdaG_dock): its width follows the
+      // SPA's --dsh-composer-card-max-width default, which renders narrower
+      // than the 780px input card the user sees (user: 太窄了). Pin it to the
+      // same 780px centered width so it aligns with the composer card.
+      '[class*=\"_7yHdaG_dock\"] { width: 780px !important; max-width: calc(100% - 16px) !important; margin-left: auto !important; margin-right: auto !important; }',
       // Composer 命令 (+) 按钮: DSH 给它 --dsw-specific-selector (opaque
       // #353638 深灰圆点), 与同排的访问模式/模型/上下文透明按钮不协调。
       // 改为透明, 让图标直接浮在输入卡片的玻璃上; 悬停态同样去灰。
@@ -622,22 +631,44 @@ export function ambientStyleScript(): string {
       // same frosted glass as the input card (alpha 0.35 + blur, inside each
       // bubble's own box only) so sent messages match the composer family.
       '[class*=\"_bubble\"] { background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      // Inline code in messages: DSH paints it with an OPAQUE dark neutral
+      // (rgb(44,44,46)) that reads as a black slab on the frosted bubbles.
+      // Repaint it with translucent blue-gray glass — the same tone as the
+      // input card and popups (rgb(39,46,62)) — so code reads as a frosted
+      // chip on the glass family instead of a solid black block.
+      'code { background-color: rgba(39,46,62,0.4) !important; }',
       // Composer popup menus (model / access-mode / command pickers, e.g.
       // _7KE1Ra_menu, _3e4SsG_menu) and the access-mode / reasoning-level
       // list popups (_sideTop_ list, which lives inside the input card):
-      // solid blue-gray by default (100% = the opaque look the user asked
-      // for), driven by the 弹出层 slider (主题设置 → 界面毛玻璃) so all popup
-      // menus share one transparency control. The same backdrop blur as the
-      // input card rides along, so at lower alphas the popups frost like the
-      // input surface instead of turning sheer. The _sideTop_ class is unique
-      // to the access-mode list (one match). The queued-message dock (插话
-      // 发送, _7yHdaG_dock) that appears above the composer while the agent
-      // is running is another popup family member and follows the same rule;
-      // its inner _7yHdaG_panel paints --dsw-specific-tip (opaque gray), so
-      // both the dock shell and the visible panel get the popup glass. The
-      // context-usage popup (上下文已用, JObwrW_panel) also rides the same
-      // variable via --dsw-specific-menu and joins the family.
-      '[class*=\"_menu\"], [class*=\"_sideTop_\"], [class*=\"_7yHdaG_dock\"], [class*=\"_7yHdaG_panel\"], [class*=\"JObwrW_panel\"] { background-color: var(--dsh-glass-popup-bg, rgba(15,17,23,0.8)) !important; backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; }',
+      // blue-gray rgba(39,46,62) — the same tone as the input card, per user
+      // request. Frosted look follows the SIDEBAR recipe the user pointed at:
+      // a light 7% tint over the wallpaper, no grain — the sidebar reads as
+      // naturally frosted exactly because the wallpaper dominates and there is
+      // no texture (noise grain was rejected: 力度太大 不正常). The 弹出层
+      // slider runs 5..100 in 主题设置 → 界面毛玻璃 (default 7, mirroring the
+      // sidebar's alpha; 100 = fully solid slab). The _sideTop_ class
+      // is unique to the access-mode list (one match). The queued-message
+      // dock (插话发送, _7yHdaG_dock) that appears
+      // above the composer while the agent is running is another popup family
+      // member and follows the same rule; its inner _7yHdaG_panel paints
+      // --dsw-specific-tip (opaque gray), so both the dock shell and the
+      // visible panel get the popup glass. The context-usage popup (上下文
+      // 已用, JObwrW_panel) also rides the same variable via
+      // --dsw-specific-menu and joins the family.
+      '[class*=\"_menu\"], [class*=\"_sideTop_\"], [class*=\"_7yHdaG_dock\"], [class*=\"_7yHdaG_panel\"], [class*=\"JObwrW_panel\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; }',
+      // Scroll-to-bottom floating button (回到底部, Md3f7G_toBottom, rides
+      // inside the sticky Md3f7G_toBottomSlot): DSH paints it with
+      // --dsw-alias-button-floating-fill (rgb(32,38,52), too dark on the
+      // glass canvas). Repaint it as frosted blue-gray glass (same family as
+      // the input card) with a translucent border so it reads as a glass
+      // chip instead of a solid dark dot. [class~=] matches the exact token,
+      // so the zero-height slot container is left alone.
+      '[class~=\"Md3f7G_toBottom\"] { background: rgba(39,46,62,0.55) !important; backdrop-filter: blur(24px) saturate(140%) !important; -webkit-backdrop-filter: blur(24px) saturate(140%) !important; border-color: rgba(255,255,255,0.18) !important; }',
+      '[class~=\"Md3f7G_toBottom\"]:hover { background: rgba(39,46,62,0.72) !important; }',
+      // User feedback: the floating button sat ~170px above the composer,
+      // too high. Drop it down so it hugs the input card (transform doesn't
+      // disturb the sticky layout, it just shifts the visual position).
+      '[class~=\"Md3f7G_toBottom\"] { transform: translateY(88px) !important; }',
       // The whole MAIN surface (everything except the settings panel): the
       // sidebar and the center conversation column get the same frosted glass
       // as the composer (driven by the 主界面毛玻璃 slider), so the whole
@@ -3130,8 +3161,8 @@ export function featureControlScript(): string {
  * a single pair of CSS variables consumed by the ambientStyleScript rules, so
  * one slider re-themes every surface of that family at once instead of
  * configuring them one by one. Values persist to localStorage (percent,
- * defaults: main/settings 35, input/sidebar/popup 100) and apply immediately
- * via the `#dsh-glass-custom` style node.
+ * defaults: main/settings 35, input/sidebar 100, popup 7) and apply
+ * immediately via the `#dsh-glass-custom` style node.
  */
 export function glassControlsScript(): string {
   return `(() => {
@@ -3162,11 +3193,15 @@ export function glassControlsScript(): string {
     // The sidebar has its own glass strength, independent of the main surface.
     let sidebarVal = Math.max(0, Math.min(60, read(KEYS.sidebar, 35)))
     // Popup menus (composer + / access-mode / model pickers / queued-message
-    // dock, e.g. _3e4SsG_menu, _7KE1Ra_menu, _sideTop_, _7yHdaG_dock): deep
-    // glass rgba(15,17,23) like the main surface (not the blue-gray input
-    // tone) so popups read as the same frosted glass family; 100 = opaque,
-    // the slider lowers the alpha for a frosted look matching the rest.
-    let popupVal = Math.max(20, Math.min(100, read(KEYS.popup, 100)))
+    // dock, e.g. _3e4SsG_menu, _7KE1Ra_menu, _sideTop_, _7yHdaG_dock):
+    // blue-gray rgba(39,46,62) — the same tone as the input card, per user
+    // request. Frosted look follows the SIDEBAR recipe the user pointed at:
+    // a light 7% tint over the wallpaper with no grain — the sidebar reads
+    // as naturally frosted exactly because the wallpaper dominates and there
+    // is no texture (the noise grain the user saw was "力度太大 不正常").
+    // The slider runs 5..100, default 7, mirroring the sidebar's alpha;
+    // 100 = fully solid slab.
+    let popupVal = Math.max(5, Math.min(100, read(KEYS.popup, 7)))
     // One style node carries the glass variables; ambientStyleScript's
     // rules reference them with the same values as defaults, so this node only
     // matters once the user deviates from the default.
@@ -3185,7 +3220,7 @@ export function glassControlsScript(): string {
         '--dsh-glass-settings-blur: 24px; ' +
         '--dsh-glass-input-bg: rgba(39,46,62,' + (inputVal / 100).toFixed(3) + '); ' +
         '--dsh-glass-sidebar-bg: ' + a(sidebarVal) + '; ' +
-        '--dsh-glass-popup-bg: rgba(15,17,23,' + (popupVal / 100).toFixed(3) + '); ' +
+        '--dsh-glass-popup-bg: rgba(39,46,62,' + (popupVal / 100).toFixed(3) + '); ' +
         '--dsh-glass-popup-blur: 40px; ' +
       '}'
     }
@@ -3245,7 +3280,7 @@ export function glassControlsScript(): string {
             '</div>' +
             '<div style="display:flex;align-items:center;gap:12px">' +
               '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-glass-popup-label></span>' +
-              '<input type="range" min="20" max="100" step="1" data-dsh-glass-popup style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-popup-fill,100%),rgba(65,118,230,0.22) var(--dsh-popup-fill,100%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
+              '<input type="range" min="5" max="100" step="1" data-dsh-glass-popup style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-popup-fill,7%),rgba(65,118,230,0.22) var(--dsh-popup-fill,7%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
               '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-popup-val></span>' +
             '</div>' +
           '</div>' +
@@ -3302,7 +3337,7 @@ export function glassControlsScript(): string {
       const renderPopup = () => {
         popupSlider.value = String(popupVal)
         popupValEl.textContent = popupVal + '%'
-        popupSlider.style.setProperty('--dsh-popup-fill', ((popupVal - 20) / 80 * 100).toFixed(1) + '%')
+        popupSlider.style.setProperty('--dsh-popup-fill', ((popupVal - 5) / 95 * 100).toFixed(1) + '%')
       }
       mainSlider.addEventListener('input', () => {
         mainVal = Math.round(Number(mainSlider.value))
@@ -3344,7 +3379,34 @@ export function glassControlsScript(): string {
     }
     applyVars() // apply persisted values on every injection, panel open or not
     mount()
-    const obs = new MutationObserver(mount)
+    // 主题设置 → 背景壁纸: move that section to the very top of the theme
+    // options (user request). The six sections live in a flex container, so
+    // order:-1 re-ranks the wallpaper block without touching the DOM order
+    // (React's reconciliation never fights it).
+    const reorderWallpaper = () => {
+      const opts = document.querySelector('[class*="VOzbGW_options"]')
+      if (opts === null) return
+      // Find the flex container whose children are the theme sections.
+      const container = [...opts.querySelectorAll('div')].find((d) => {
+        const kids = [...d.children]
+        return kids.length >= 4 && kids.some((k) => (k.textContent || '').trim().startsWith('背景壁纸'))
+      })
+      if (container === undefined) return
+      const wp = [...container.children].find((k) => (k.textContent || '').trim().startsWith('背景壁纸'))
+      if (wp !== undefined && wp.style.order !== '-2') wp.style.order = '-2'
+      // 背景透明度 → 界面毛玻璃 前. order only accepts integers, so rank
+      // explicitly: wallpaper -2, opacity -1, glass 0; the rest stay at the
+      // default 0 and keep their DOM order after the glass section.
+      const bt = [...container.children].find((k) => (k.textContent || '').trim().startsWith('背景透明度'))
+      if (bt !== undefined && bt.style.order !== '-1') bt.style.order = '-1'
+      const jm = [...container.children].find((k) => (k.textContent || '').trim().startsWith('界面毛玻璃'))
+      if (jm !== undefined && jm.style.order !== '0') jm.style.order = '0'
+    }
+    reorderWallpaper()
+    const obs = new MutationObserver(() => {
+      mount()
+      reorderWallpaper()
+    })
     window.__dshGlassControlObserver = obs
     obs.observe(document.body, { childList: true, subtree: true, characterData: true })
   })()`
