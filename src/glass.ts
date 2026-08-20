@@ -564,9 +564,16 @@ export function ambientStyleScript(): string {
       // brand into an icon svg (brandMark, 24px) and a wordmark svg
       // (brandName, 156px); forcing 260px blew both up and the overflow:hidden
       // button clipped them. Original sizes render correctly.
+      // The SPA's root is 12px wider than the sidebar column, which pushes the
+      // logo row flush against the right edge while leaving 12px on the left.
+      // Shift it 6px left and pin the width so the row centers in the column
+      // (6px each side) — in a flex container a bare margin-left alone makes
+      // the row re-grow and stay flush right.
       '[class*=\"_sidebarCol\"] [class*=\"_root\"]:not([class*=\"_collapsed\"]) [class*=\"_logoRow\"] {',
       '  height: 75px !important;',
+      '  width: 256px !important;',
       '  margin-bottom: 6px !important;',
+      '  margin-left: -6px !important;',
       '  padding-top: 6px !important;',
       '  padding-bottom: 6px !important;',
       '}',
@@ -710,6 +717,18 @@ export function ambientStyleScript(): string {
     // wordmark letters (brandName, second). Give each its own gradient id so
     // the letter paths cycle colors too, not just the icon.
     const brandGradId = (idx) => (idx === 0 ? 'dsh-logo-grad' : 'dsh-logo-grad-name')
+    // Repoint every brand letter path at the gradient. rc.8 has two flavors:
+    // the "DeepSeek" letters use fill="currentColor", while the "HARNESS"
+    // badge letters (inside g[clip-path*="badge"]) use the inverted label
+    // variable. Both must be repointed so the whole wordmark cycles colors.
+    const repointLetterFills = (svg, gradId) => {
+      svg.querySelectorAll('path[fill="currentColor"]').forEach((p) => {
+        p.setAttribute('fill', 'url(#' + gradId + ')')
+      })
+      svg.querySelectorAll('g[clip-path*="badge"] path').forEach((p) => {
+        p.setAttribute('fill', 'url(#' + gradId + ')')
+      })
+    }
     const ensureLogoStructure = () => {
       const svgs = document.querySelectorAll('[class*="_brand"] svg')
       if (svgs.length === 0) return
@@ -720,9 +739,7 @@ export function ambientStyleScript(): string {
         if (grad !== null) {
           // Gradient survives, but the re-render may have reset letter fills
           // back to currentColor; repoint them regardless.
-          svg.querySelectorAll('path[fill="currentColor"]').forEach((p) => {
-            p.setAttribute('fill', 'url(#' + gradId + ')')
-          })
+          repointLetterFills(svg, gradId)
           return
         }
         const defs = document.createElementNS(NS, 'defs')
@@ -734,9 +751,7 @@ export function ambientStyleScript(): string {
         newGrad.setAttribute('y2', '0')
         defs.appendChild(newGrad)
         svg.insertBefore(defs, svg.firstChild)
-        svg.querySelectorAll('path[fill="currentColor"]').forEach((p) => {
-          p.setAttribute('fill', 'url(#' + gradId + ')')
-        })
+        repointLetterFills(svg, gradId)
       })
     }
 
