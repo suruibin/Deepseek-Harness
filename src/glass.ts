@@ -634,8 +634,10 @@ export function ambientStyleScript(): string {
       // 发送, _7yHdaG_dock) that appears above the composer while the agent
       // is running is another popup family member and follows the same rule;
       // its inner _7yHdaG_panel paints --dsw-specific-tip (opaque gray), so
-      // both the dock shell and the visible panel get the popup glass.
-      '[class*=\"_menu\"], [class*=\"_sideTop_\"], [class*=\"_7yHdaG_dock\"], [class*=\"_7yHdaG_panel\"] { background-color: var(--dsh-glass-popup-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; }',
+      // both the dock shell and the visible panel get the popup glass. The
+      // context-usage popup (上下文已用, JObwrW_panel) also rides the same
+      // variable via --dsw-specific-menu and joins the family.
+      '[class*=\"_menu\"], [class*=\"_sideTop_\"], [class*=\"_7yHdaG_dock\"], [class*=\"_7yHdaG_panel\"], [class*=\"JObwrW_panel\"] { background-color: var(--dsh-glass-popup-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; }',
       // The whole MAIN surface (everything except the settings panel): the
       // sidebar and the center conversation column get the same frosted glass
       // as the composer (driven by the 主界面毛玻璃 slider), so the whole
