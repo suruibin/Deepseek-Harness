@@ -605,6 +605,11 @@ export function ambientStyleScript(): string {
       // stretches it to the full center-column width; restore the historical
       // centered 780px width.
       '[class*=\"uV2eYG_card\"] { width: 780px !important; max-width: calc(100% - 16px) !important; margin-left: auto !important; margin-right: auto !important; background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      // Composer 命令 (+) 按钮: DSH 给它 --dsw-specific-selector (opaque
+      // #353638 深灰圆点), 与同排的访问模式/模型/上下文透明按钮不协调。
+      // 改为透明, 让图标直接浮在输入卡片的玻璃上; 悬停态同样去灰。
+      '[class*=\"uV2eYG_add\"] { background: transparent !important; }',
+      '[class*=\"uV2eYG_add\"]:hover:not(:disabled) { background: rgba(128,132,142,0.18) !important; }',
       // Task progress strip above the composer (lXshSW_root): DSH paints it
       // with --dsw-specific-tip, an OPAQUE neutral (rgb(53,54,56)) that reads
       // as a solid slab on the glass canvas. Repaint it with the same frosted
