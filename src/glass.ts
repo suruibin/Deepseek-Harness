@@ -637,7 +637,7 @@ export function ambientStyleScript(): string {
       // both the dock shell and the visible panel get the popup glass. The
       // context-usage popup (上下文已用, JObwrW_panel) also rides the same
       // variable via --dsw-specific-menu and joins the family.
-      '[class*=\"_menu\"], [class*=\"_sideTop_\"], [class*=\"_7yHdaG_dock\"], [class*=\"_7yHdaG_panel\"], [class*=\"JObwrW_panel\"] { background-color: var(--dsh-glass-popup-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; }',
+      '[class*=\"_menu\"], [class*=\"_sideTop_\"], [class*=\"_7yHdaG_dock\"], [class*=\"_7yHdaG_panel\"], [class*=\"JObwrW_panel\"] { background-color: var(--dsh-glass-popup-bg, rgba(15,17,23,0.8)) !important; backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; }',
       // The whole MAIN surface (everything except the settings panel): the
       // sidebar and the center conversation column get the same frosted glass
       // as the composer (driven by the 主界面毛玻璃 slider), so the whole
@@ -3162,10 +3162,10 @@ export function glassControlsScript(): string {
     // The sidebar has its own glass strength, independent of the main surface.
     let sidebarVal = Math.max(0, Math.min(60, read(KEYS.sidebar, 35)))
     // Popup menus (composer + / access-mode / model pickers / queued-message
-    // dock, e.g. _3e4SsG_menu, _7KE1Ra_menu, _sideTop_, _7yHdaG_dock): solid
-    // blue-gray rgb(39,46,62) by default (100 = the opaque look the user
-    // asked for); the slider lowers the alpha for a frosted popup family
-    // matching the rest of the glass.
+    // dock, e.g. _3e4SsG_menu, _7KE1Ra_menu, _sideTop_, _7yHdaG_dock): deep
+    // glass rgba(15,17,23) like the main surface (not the blue-gray input
+    // tone) so popups read as the same frosted glass family; 100 = opaque,
+    // the slider lowers the alpha for a frosted look matching the rest.
     let popupVal = Math.max(20, Math.min(100, read(KEYS.popup, 100)))
     // One style node carries the glass variables; ambientStyleScript's
     // rules reference them with the same values as defaults, so this node only
@@ -3185,7 +3185,7 @@ export function glassControlsScript(): string {
         '--dsh-glass-settings-blur: 24px; ' +
         '--dsh-glass-input-bg: rgba(39,46,62,' + (inputVal / 100).toFixed(3) + '); ' +
         '--dsh-glass-sidebar-bg: ' + a(sidebarVal) + '; ' +
-        '--dsh-glass-popup-bg: rgba(39,46,62,' + (popupVal / 100).toFixed(3) + '); ' +
+        '--dsh-glass-popup-bg: rgba(15,17,23,' + (popupVal / 100).toFixed(3) + '); ' +
         '--dsh-glass-popup-blur: 40px; ' +
       '}'
     }
