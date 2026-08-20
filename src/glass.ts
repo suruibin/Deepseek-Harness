@@ -622,9 +622,11 @@ export function ambientStyleScript(): string {
       // list popups (_sideTop_ list, which lives inside the input card):
       // solid blue-gray by default (100% = the opaque look the user asked
       // for), driven by the 弹出层 slider (主题设置 → 界面毛玻璃) so all popup
-      // menus share one transparency control. The _sideTop_ class is unique
+      // menus share one transparency control. The same backdrop blur as the
+      // input card rides along, so at lower alphas the popups frost like the
+      // input surface instead of turning sheer. The _sideTop_ class is unique
       // to the access-mode list (one match).
-      '[class*=\"_menu\"], [class*=\"_sideTop_\"] { background-color: var(--dsh-glass-popup-bg, rgb(39,46,62)) !important; }',
+      '[class*=\"_menu\"], [class*=\"_sideTop_\"] { background-color: var(--dsh-glass-popup-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // The whole MAIN surface (everything except the settings panel): the
       // sidebar and the center conversation column get the same frosted glass
       // as the composer (driven by the 主界面毛玻璃 slider), so the whole
