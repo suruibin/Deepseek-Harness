@@ -560,15 +560,15 @@ export function ambientStyleScript(): string {
       '}',
       // Expanded brand: taller logo row (75px) and larger wordmark. The
       // collapsed rail keeps its compact 36px strip unchanged.
+      // NOTE: no brand-svg 260px width rule here anymore — rc.8 splits the
+      // brand into an icon svg (brandMark, 24px) and a wordmark svg
+      // (brandName, 156px); forcing 260px blew both up and the overflow:hidden
+      // button clipped them. Original sizes render correctly.
       '[class*=\"_sidebarCol\"] [class*=\"_root\"]:not([class*=\"_collapsed\"]) [class*=\"_logoRow\"] {',
       '  height: 75px !important;',
       '  margin-bottom: 6px !important;',
       '  padding-top: 6px !important;',
       '  padding-bottom: 6px !important;',
-      '}',
-      '[class*=\"_sidebarCol\"] [class*=\"_root\"]:not([class*=\"_collapsed\"]) [class*=\"_brand\"] svg {',
-      '  width: 260px !important;',
-      '  height: auto !important;',
       '}',
       // Collapsed rail: the icon buttons are 36px but the rail's asymmetric
       // padding (18px left / 10px right) pushed every icon right of center.
@@ -706,65 +706,82 @@ export function ambientStyleScript(): string {
     // reverting letter fills to currentColor - that is why the wordmark
     // flickers away for a frame. Rebuild promptly whenever the structure is
     // missing, even if the dataset flag still says done.
+    // rc.8 splits the brand into TWO svgs: the icon (brandMark, first) and the
+    // wordmark letters (brandName, second). Give each its own gradient id so
+    // the letter paths cycle colors too, not just the icon.
+    const brandGradId = (idx) => (idx === 0 ? 'dsh-logo-grad' : 'dsh-logo-grad-name')
     const ensureLogoStructure = () => {
-      const svg = document.querySelector('[class*="_brand"] svg')
-      if (svg === null) return
+      const svgs = document.querySelectorAll('[class*="_brand"] svg')
+      if (svgs.length === 0) return
       const NS = 'http://www.w3.org/2000/svg'
-      const gradId = 'dsh-logo-grad'
-      const grad = svg.querySelector('linearGradient[id="' + gradId + '"]')
-      if (grad !== null) {
-        // Gradient survives, but the re-render may have reset letter fills
-        // back to currentColor; repoint them regardless.
+      svgs.forEach((svg, idx) => {
+        const gradId = brandGradId(idx)
+        const grad = svg.querySelector('linearGradient[id="' + gradId + '"]')
+        if (grad !== null) {
+          // Gradient survives, but the re-render may have reset letter fills
+          // back to currentColor; repoint them regardless.
+          svg.querySelectorAll('path[fill="currentColor"]').forEach((p) => {
+            p.setAttribute('fill', 'url(#' + gradId + ')')
+          })
+          return
+        }
+        const defs = document.createElementNS(NS, 'defs')
+        const newGrad = document.createElementNS(NS, 'linearGradient')
+        newGrad.id = gradId
+        newGrad.setAttribute('x1', '0')
+        newGrad.setAttribute('y1', '0')
+        newGrad.setAttribute('x2', '1')
+        newGrad.setAttribute('y2', '0')
+        defs.appendChild(newGrad)
+        svg.insertBefore(defs, svg.firstChild)
         svg.querySelectorAll('path[fill="currentColor"]').forEach((p) => {
           p.setAttribute('fill', 'url(#' + gradId + ')')
         })
-        return
-      }
-      const defs = document.createElementNS(NS, 'defs')
-      const newGrad = document.createElementNS(NS, 'linearGradient')
-      newGrad.id = gradId
-      newGrad.setAttribute('x1', '0')
-      newGrad.setAttribute('y1', '0')
-      newGrad.setAttribute('x2', '1')
-      newGrad.setAttribute('y2', '0')
-      defs.appendChild(newGrad)
-      svg.insertBefore(defs, svg.firstChild)
-      svg.querySelectorAll('path[fill="currentColor"]').forEach((p) => {
-        p.setAttribute('fill', 'url(#' + gradId + ')')
       })
     }
 
     const applyLogoStructure = ensureLogoStructure
 
     // Repaint the wordmark gradient and whale rect with current colors.
+    // rc.8: repaint BOTH brand svgs (icon + wordmark letters) with their own
+    // gradient ids, so the letters cycle colors along with the icon. Each svg
+    // is judged by its own gradient stops, not the shared cache, so a color
+    // change repaints every svg exactly once.
     const applyLogo = () => {
-      const svg = document.querySelector('[class*="_brand"] svg')
-      if (svg === null) return
+      const svgs = document.querySelectorAll('[class*="_brand"] svg')
+      if (svgs.length === 0) return
       const NS = 'http://www.w3.org/2000/svg'
-      let grad = svg.querySelector('linearGradient[id="dsh-logo-grad"]')
-      if (grad === null) {
-        // Structure was dropped by a sidebar re-render: rebuild it and force
-        // a repaint by clearing the applied-color cache (the new gradient
-        // starts with no stops, so an early return would leave it empty).
-        lastAppliedGrad = ''
-        ensureLogoStructure()
-        grad = svg.querySelector('linearGradient[id="dsh-logo-grad"]')
-        if (grad === null) return
+      const stopsMatch = (grad) => {
+        const kids = grad.children
+        if (kids.length !== gradColors.length) return false
+        for (let i = 0; i < kids.length; i++) {
+          if (kids[i].getAttribute('stop-color') !== gradColors[i]) return false
+        }
+        return true
       }
-      const gradKey = gradColors.join('|')
-      if (gradKey === lastAppliedGrad && whaleColor === lastAppliedWhale && grad.firstChild !== null) return
-      while (grad.firstChild !== null) grad.removeChild(grad.firstChild)
-      gradColors.forEach((c, i) => {
-        const stop = document.createElementNS(NS, 'stop')
-        stop.setAttribute('offset', String((i * 100) / (gradColors.length - 1)) + '%')
-        stop.setAttribute('stop-color', c)
-        grad.appendChild(stop)
+      svgs.forEach((svg, idx) => {
+        const gradId = brandGradId(idx)
+        let grad = svg.querySelector('linearGradient[id="' + gradId + '"]')
+        if (grad === null) {
+          // Structure was dropped by a sidebar re-render: rebuild it and force
+          // a repaint (the new gradient starts with no stops, so an early
+          // return would leave it empty).
+          ensureLogoStructure()
+          grad = svg.querySelector('linearGradient[id="' + gradId + '"]')
+          if (grad === null) return
+        }
+        if (grad.firstChild !== null && stopsMatch(grad)) return
+        while (grad.firstChild !== null) grad.removeChild(grad.firstChild)
+        gradColors.forEach((c, i) => {
+          const stop = document.createElementNS(NS, 'stop')
+          stop.setAttribute('offset', String((i * 100) / (gradColors.length - 1)) + '%')
+          stop.setAttribute('stop-color', c)
+          grad.appendChild(stop)
+        })
+        svg.querySelectorAll('rect').forEach((r) => {
+          if (idx === 0 && r.getAttribute('fill') !== whaleColor) r.setAttribute('fill', whaleColor)
+        })
       })
-      svg.querySelectorAll('rect').forEach((r) => {
-        if (r.getAttribute('fill') !== whaleColor) r.setAttribute('fill', whaleColor)
-      })
-      lastAppliedGrad = gradKey
-      lastAppliedWhale = whaleColor
     }
 
         // Collapsed rail fish: repaint with the same whale color (all paths,
@@ -893,8 +910,13 @@ export function ambientStyleScript(): string {
       // Brand (re)appearance is time-critical: rebuild its gradient structure
       // synchronously so collapse/expand never leaves the wordmark invisible
       // for even one frame. Everything else stays rAF-throttled.
-      const brandSvg = document.querySelector('[class*="_brand"] svg')
-      if (brandSvg !== null && brandSvg.querySelector('linearGradient[id="dsh-logo-grad"]') === null) {
+      // rc.8: check BOTH brand svgs (icon + wordmark letters).
+      const brandSvgs = document.querySelectorAll('[class*="_brand"] svg')
+      let brandBroken = false
+      brandSvgs.forEach((s, idx) => {
+        if (s.querySelector('linearGradient[id="' + brandGradId(idx) + '"]') === null) brandBroken = true
+      })
+      if (brandSvgs.length > 0 && brandBroken) {
         ensureLogoStructure()
         lastAppliedGrad = ''
         applyLogo()
@@ -1020,10 +1042,14 @@ export function whaleSprayScript(): string {
     // Whale palette mirrors the ambient brand cycle.
     const WHALES = ['#4176e6', '#3b82f6', '#06b6d4', '#10b981', '#6366f1', '#0ea5e9', '#7b5cf0', '#f472b6']
     const whaleColor = () => {
-      const rect = document.querySelector('[class*="_brand"] svg rect')
-      if (rect !== null) {
-        const f = rect.getAttribute('fill')
-        if (f !== null && f !== 'currentColor') return f
+      // rc.8: the icon svg has no rect anymore; the wordmark svg carries
+      // white/currentColor decoration rects that would read as a wrong color.
+      // Read the icon's first gradient stop instead, falling back to a random
+      // whale color while the brand is still initializing.
+      const grad = document.querySelector('[class*="_brand"] svg linearGradient[id="dsh-logo-grad"]')
+      if (grad !== null && grad.firstChild !== null) {
+        const c = grad.firstChild.getAttribute('stop-color')
+        if (c !== null) return c
       }
       return WHALES[Math.floor(Math.random() * WHALES.length)]
     }
