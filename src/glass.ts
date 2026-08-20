@@ -721,12 +721,19 @@ export function ambientStyleScript(): string {
     // the "DeepSeek" letters use fill="currentColor", while the "HARNESS"
     // badge letters (inside g[clip-path*="badge"]) use the inverted label
     // variable. Both must be repointed so the whole wordmark cycles colors.
+    // The HARNESS badge backdrop rect (fill="currentColor", renders white)
+    // gets the same gradient at ~28% opacity so the badge reads as a tinted
+    // pill instead of a white box, and the letters stay clearly legible.
     const repointLetterFills = (svg, gradId) => {
       svg.querySelectorAll('path[fill="currentColor"]').forEach((p) => {
         p.setAttribute('fill', 'url(#' + gradId + ')')
       })
       svg.querySelectorAll('g[clip-path*="badge"] path').forEach((p) => {
         p.setAttribute('fill', 'url(#' + gradId + ')')
+      })
+      svg.querySelectorAll('rect[fill="currentColor"]').forEach((r) => {
+        r.setAttribute('fill', 'url(#' + gradId + ')')
+        r.setAttribute('fill-opacity', '0.28')
       })
     }
     const ensureLogoStructure = () => {
