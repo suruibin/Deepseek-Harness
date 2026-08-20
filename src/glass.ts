@@ -620,13 +620,12 @@ export function ambientStyleScript(): string {
       // Composer popup menus (model / access-mode / command pickers, e.g.
       // _7KE1Ra_menu, _3e4SsG_menu) and the access-mode / reasoning-level
       // list popups (_sideTop_ list, which lives inside the input card):
-      // solid blue-gray by default (100% = the opaque look the user asked
-      // for), driven by the 弹出层 slider (主题设置 → 界面毛玻璃) so all popup
-      // menus share one transparency control. The same backdrop blur as the
-      // input card rides along, so at lower alphas the popups frost like the
-      // input surface instead of turning sheer. The _sideTop_ class is unique
-      // to the access-mode list (one match).
-      '[class*=\"_menu\"], [class*=\"_sideTop_\"] { background-color: var(--dsh-glass-popup-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      // they ride the SAME variable as the input card (--dsh-glass-input-bg),
+      // so popups match the composer exactly — solid blue-gray at 100%, the
+      // same frosted translucency + backdrop blur at lower alphas, driven by
+      // the single 输入框 slider (主题设置 → 界面毛玻璃). The _sideTop_ class is
+      // unique to the access-mode list (one match).
+      '[class*=\"_menu\"], [class*=\"_sideTop_\"] { background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
       // The whole MAIN surface (everything except the settings panel): the
       // sidebar and the center conversation column get the same frosted glass
       // as the composer (driven by the 主界面毛玻璃 slider), so the whole
@@ -3111,15 +3110,16 @@ export function featureControlScript(): string {
 
 /**
  * Injected UI for the unified frosted-glass controls in the Theme Settings
- * panel (主题设置 → 界面毛玻璃): five independent sliders — MAIN surface
+ * panel (主题设置 → 界面毛玻璃): four independent sliders — MAIN surface
  * (composer card, task strip, user bubbles), SETTINGS surface (the hosted
- * settings panel itself), INPUT (the composer card), SIDEBAR, and POPUP
- * (dropdown menus, e.g. _3e4SsG_menu / _7KE1Ra_menu / _sideTop_). Each writes
- * a single pair of CSS variables consumed by the ambientStyleScript rules, so
- * one slider re-themes every surface of that family at once instead of
- * configuring them one by one. Values persist to localStorage (percent,
- * defaults: main/settings 35, input/sidebar/popup 100) and apply immediately
- * via the `#dsh-glass-custom` style node.
+ * settings panel itself), INPUT (the composer card), and SIDEBAR. Popup menus
+ * (_3e4SsG_menu / _7KE1Ra_menu / _sideTop_) deliberately ride the same
+ * --dsh-glass-input-bg variable as the input card, so they always match the
+ * composer exactly. Each writes a single pair of CSS variables consumed by
+ * the ambientStyleScript rules, so one slider re-themes every surface of that
+ * family at once instead of configuring them one by one. Values persist to
+ * localStorage (percent, defaults: main/settings 35, input/sidebar 100) and
+ * apply immediately via the `#dsh-glass-custom` style node.
  */
 export function glassControlsScript(): string {
   return `(() => {
@@ -3127,7 +3127,7 @@ export function glassControlsScript(): string {
       window.__dshGlassControlObserver.disconnect()
       window.__dshGlassControlObserver = undefined
     }
-    const KEYS = { main: 'dsh-desktop-glass-main', settings: 'dsh-desktop-glass-settings', input: 'dsh-desktop-glass-input', sidebar: 'dsh-desktop-glass-sidebar', popup: 'dsh-desktop-glass-popup' }
+    const KEYS = { main: 'dsh-desktop-glass-main', settings: 'dsh-desktop-glass-settings', input: 'dsh-desktop-glass-input', sidebar: 'dsh-desktop-glass-sidebar' }
     const read = (key, fallback) => {
       try {
         const raw = localStorage.getItem(key)
@@ -3149,11 +3149,6 @@ export function glassControlsScript(): string {
     let inputVal = Math.max(0, Math.min(100, read(KEYS.input, 100)))
     // The sidebar has its own glass strength, independent of the main surface.
     let sidebarVal = Math.max(0, Math.min(60, read(KEYS.sidebar, 35)))
-    // Popup menus (composer + / access-mode / model pickers, e.g. _3e4SsG_menu,
-    // _7KE1Ra_menu, _sideTop_): solid blue-gray rgb(39,46,62) by default
-    // (100 = the opaque look the user asked for); the slider lowers the alpha
-    // for a frosted popup family matching the rest of the glass.
-    let popupVal = Math.max(20, Math.min(100, read(KEYS.popup, 100)))
     // One style node carries the glass variables; ambientStyleScript's
     // rules reference them with the same values as defaults, so this node only
     // matters once the user deviates from the default.
@@ -3172,7 +3167,6 @@ export function glassControlsScript(): string {
         '--dsh-glass-settings-blur: 24px; ' +
         '--dsh-glass-input-bg: rgba(39,46,62,' + (inputVal / 100).toFixed(3) + '); ' +
         '--dsh-glass-sidebar-bg: ' + a(sidebarVal) + '; ' +
-        '--dsh-glass-popup-bg: rgba(39,46,62,' + (popupVal / 100).toFixed(3) + '); ' +
       '}'
     }
     const mount = () => {
@@ -3186,7 +3180,6 @@ export function glassControlsScript(): string {
         settings: zh ? '设置界面' : 'Settings surface',
         input: zh ? '输入框' : 'Input surface',
         sidebar: zh ? '侧边栏' : 'Sidebar',
-        popup: zh ? '弹出层' : 'Popup menus',
       }
       const existing = document.querySelector('[data-dsh-glass-controls]')
       if (existing !== null) {
@@ -3199,7 +3192,6 @@ export function glassControlsScript(): string {
         sync('[data-dsh-glass-settings-label]', labels.settings)
         sync('[data-dsh-glass-input-label]', labels.input)
         sync('[data-dsh-glass-sidebar-label]', labels.sidebar)
-        sync('[data-dsh-glass-popup-label]', labels.popup)
         return
       }
       const control = document.createElement('div')
@@ -3229,11 +3221,6 @@ export function glassControlsScript(): string {
               '<input type="range" min="0" max="60" step="1" data-dsh-glass-sidebar style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-sidebar-fill,35%),rgba(65,118,230,0.22) var(--dsh-sidebar-fill,35%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
               '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-sidebar-val></span>' +
             '</div>' +
-            '<div style="display:flex;align-items:center;gap:12px">' +
-              '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-glass-popup-label></span>' +
-              '<input type="range" min="20" max="100" step="1" data-dsh-glass-popup style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-popup-fill,100%),rgba(65,118,230,0.22) var(--dsh-popup-fill,100%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
-              '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-popup-val></span>' +
-            '</div>' +
           '</div>' +
         '</div>' +
         '<style>' +
@@ -3253,18 +3240,15 @@ export function glassControlsScript(): string {
       sync('[data-dsh-glass-settings-label]', labels.settings)
       sync('[data-dsh-glass-input-label]', labels.input)
       sync('[data-dsh-glass-sidebar-label]', labels.sidebar)
-      sync('[data-dsh-glass-popup-label]', labels.popup)
       const mainSlider = control.querySelector('[data-dsh-glass-main]')
       const settingsSlider = control.querySelector('[data-dsh-glass-settings]')
       const inputSlider = control.querySelector('[data-dsh-glass-input]')
       const sidebarSlider = control.querySelector('[data-dsh-glass-sidebar]')
-      const popupSlider = control.querySelector('[data-dsh-glass-popup]')
       const mainValEl = control.querySelector('[data-dsh-glass-main-val]')
       const settingsValEl = control.querySelector('[data-dsh-glass-settings-val]')
       const inputValEl = control.querySelector('[data-dsh-glass-input-val]')
       const sidebarValEl = control.querySelector('[data-dsh-glass-sidebar-val]')
-      const popupValEl = control.querySelector('[data-dsh-glass-popup-val]')
-      if (mainSlider === null || settingsSlider === null || inputSlider === null || sidebarSlider === null || popupSlider === null || mainValEl === null || settingsValEl === null || inputValEl === null || sidebarValEl === null || popupValEl === null) return
+      if (mainSlider === null || settingsSlider === null || inputSlider === null || sidebarSlider === null || mainValEl === null || settingsValEl === null || inputValEl === null || sidebarValEl === null) return
       const renderMain = () => {
         mainSlider.value = String(mainVal)
         mainValEl.textContent = mainVal + '%'
@@ -3284,11 +3268,6 @@ export function glassControlsScript(): string {
         sidebarSlider.value = String(sidebarVal)
         sidebarValEl.textContent = sidebarVal + '%'
         sidebarSlider.style.setProperty('--dsh-sidebar-fill', ((sidebarVal) / 60 * 100).toFixed(1) + '%')
-      }
-      const renderPopup = () => {
-        popupSlider.value = String(popupVal)
-        popupValEl.textContent = popupVal + '%'
-        popupSlider.style.setProperty('--dsh-popup-fill', ((popupVal - 20) / 80 * 100).toFixed(1) + '%')
       }
       mainSlider.addEventListener('input', () => {
         mainVal = Math.round(Number(mainSlider.value))
@@ -3314,17 +3293,10 @@ export function glassControlsScript(): string {
         renderSidebar()
         applyVars()
       })
-      popupSlider.addEventListener('input', () => {
-        popupVal = Math.round(Number(popupSlider.value))
-        write(KEYS.popup, popupVal)
-        renderPopup()
-        applyVars()
-      })
       renderMain()
       renderSettings()
       renderInput()
       renderSidebar()
-      renderPopup()
       const holder = panel.querySelector('[data-dsh-theme-glass-slot]') || panel
       holder.appendChild(control)
     }
