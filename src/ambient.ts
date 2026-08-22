@@ -422,14 +422,14 @@ export function ambientDecorScript(): string {
       control.style.cssText = 'flex-direction:column;gap:12px;padding:16px 0;display:flex'
       control.innerHTML =
         '<div style="color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px" data-dsh-hover-title></div>' +
-        '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
+        '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding-left:12px">' +
           '<span class="dsh-switch">' +
             '<input type="checkbox" data-dsh-toggle-spotlight>' +
             '<span class="track"></span><span class="thumb"></span>' +
           '</span>' +
           '<span style="color:var(--dsw-alias-label-secondary);font-size:13px" data-dsh-label-spotlight></span>' +
         '</label>' +
-        '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
+        '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding-left:12px">' +
           '<span class="dsh-switch">' +
             '<input type="checkbox" data-dsh-toggle-press>' +
             '<span class="track"></span><span class="thumb"></span>' +

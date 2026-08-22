@@ -246,9 +246,7 @@ export function alphaControlScript(): string {
       const title = zh ? '背景透明度' : 'Background opacity'
       const existing = document.querySelector(MOUNTED)
       if (existing !== null) {
-        // Already mounted (the SPA swaps locale text in place without
-        // rebuilding the panel): keep the control, sync its title.
-        const titleEl = existing.firstElementChild
+        const titleEl = existing.querySelector('[data-dsh-alpha-title]')
         if (titleEl !== null && titleEl.textContent !== title) titleEl.textContent = title
         return
       }
@@ -256,18 +254,18 @@ export function alphaControlScript(): string {
         control.dataset.dshGlassAlpha = 'true'
         control.style.cssText = 'flex-direction:column;gap:8px;padding:16px 0;display:flex'
         control.innerHTML =
-          '<div style="color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px"></div>' +
-          '<div style="display:flex;align-items:center;gap:12px">' +
+          '<div style="display:flex;align-items:center;gap:12px;padding-left:12px">' +
+            '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-alpha-title></span>' +
             '<input type="range" min="0" max="1" step="0.05" style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-alpha-fill,0%),rgba(65,118,230,0.22) var(--dsh-alpha-fill,0%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
-            '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;min-width:44px;text-align:right"></span>' +
+            '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-alpha-val></span>' +
           '</div>' +
           '<div data-dsh-cursor-fx style="flex-direction:column;gap:10px;display:flex;margin-top:8px">' +
             '<div style="color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px">光标特效</div>' +
-            '<label style="display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary);font-size:13px;cursor:pointer">' +
+            '<label style="display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary);font-size:13px;cursor:pointer;padding-left:12px">' +
               '<input type="checkbox" style="width:15px;height:15px;accent-color:#4176e6;cursor:pointer">' +
               '<span>启用</span>' +
             '</label>' +
-            '<div style="display:flex;align-items:center;gap:10px">' +
+            '<div style="display:flex;align-items:center;gap:10px;padding-left:12px">' +
               '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;min-width:52px">侧边栏</span>' +
               '<select data-dsh-fx-sidebar style="flex:1;background:rgb(39,46,62);color:var(--dsw-alias-label-primary);border:none;border-radius:18px;padding:6px 12px;font-size:13px;cursor:pointer;outline:none">' +
                 '<option value="star">星星</option>' +
@@ -277,7 +275,7 @@ export function alphaControlScript(): string {
                 '<option value="none">关闭</option>' +
               '</select>' +
             '</div>' +
-            '<div style="display:flex;align-items:center;gap:10px">' +
+            '<div style="display:flex;align-items:center;gap:10px;padding-left:12px">' +
               '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;min-width:52px">右侧</span>' +
               '<select data-dsh-fx-center style="flex:1;background:rgb(39,46,62);color:var(--dsw-alias-label-primary);border:none;border-radius:18px;padding:6px 12px;font-size:13px;cursor:pointer;outline:none">' +
                 '<option value="water">吐水</option>' +
@@ -295,10 +293,10 @@ export function alphaControlScript(): string {
             '[data-dsh-glass-alpha] input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #4176e6;box-shadow:0 1px 4px rgba(15,20,35,0.35);cursor:pointer}' +
             '[data-dsh-glass-alpha] input[type=range]::-moz-range-track{height:6px;border-radius:999px;background:linear-gradient(90deg,#4176e6 var(--dsh-alpha-fill,0%),rgba(65,118,230,0.22) var(--dsh-alpha-fill,0%))}' +
           '</style>'
-        const titleEl = control.firstElementChild
+        const titleEl = control.querySelector('[data-dsh-alpha-title]')
         if (titleEl !== null) titleEl.textContent = title
         const input = control.querySelector('input[type=range]')
-        const label = control.querySelector('span')
+        const label = control.querySelector('[data-dsh-alpha-val]')
         if (input === null || label === null) return
         const render = (value) => {
           label.textContent = Math.round(value * 100) + '%'
@@ -3079,11 +3077,13 @@ export function featureControlScript(): string {
         const holder = panel.querySelector('[data-dsh-theme-cycle-slot]') || panel
         cycleControl = document.createElement('div')
         cycleControl.dataset.dshCycleControl = 'true'
-        cycleControl.style.cssText = 'display:flex;align-items:center;gap:10px;padding:16px 0'
+        cycleControl.style.cssText = 'display:flex;align-items:center;gap:10px;padding:16px 0;width:100%'
         cycleControl.innerHTML =
-          '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-label-cycle></span>' +
-          '<input type="number" min="1" max="600" step="1" data-dsh-cycle-input style="width:64px;background:rgb(39,46,62);color:var(--dsw-alias-label-primary);border:none;border-radius:10px;padding:6px 8px;font-size:13px;text-align:center;outline:none">' +
-          '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:24px" data-dsh-cycle-unit></span>'
+          '<span style="color:var(--dsw-alias-label-secondary);font-size:13px" data-dsh-label-cycle></span>' +
+          '<div style="display:flex;align-items:center;gap:6px;margin-left:auto">' +
+            '<input type="number" min="1" max="600" step="1" data-dsh-cycle-input style="width:64px;background:rgb(39,46,62);color:var(--dsw-alias-label-primary);border:none;border-radius:10px;padding:6px 8px;font-size:13px;text-align:center;outline:none">' +
+            '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:16px" data-dsh-cycle-unit></span>' +
+          '</div>'
         const sync = (sel, text) => {
           const el = cycleControl.querySelector(sel)
           if (el !== null) el.textContent = text
@@ -3131,14 +3131,14 @@ export function featureControlScript(): string {
       control.innerHTML =
         '<div style="color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px" data-dsh-feature-title></div>' +
         // Toggle switches (36×20 track, 16px thumb) styled like the theme.
-        '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
+        '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding-left:12px">' +
           '<span class="dsh-switch">' +
             '<input type="checkbox" data-dsh-toggle-files>' +
             '<span class="track"></span><span class="thumb"></span>' +
           '</span>' +
           '<span style="color:var(--dsw-alias-label-secondary);font-size:13px" data-dsh-label-files></span>' +
         '</label>' +
-        '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
+        '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding-left:12px">' +
           '<span class="dsh-switch">' +
             '<input type="checkbox" data-dsh-toggle-term>' +
             '<span class="track"></span><span class="thumb"></span>' +
@@ -3233,13 +3233,13 @@ export function glassControlsScript(): string {
     // asked for. mainblur is the big-surface frosted strength (px), shared by
     // main/settings/sidebar/input; popupblur is the popup family's own.
     const SLIDERS = [
+      { key: 'mainblur', min: 0, max: 100, def: 20, unit: 'px' },
+      { key: 'popupblur', min: 0, max: 100, def: 20, unit: 'px' },
       { key: 'main', min: 0, max: 100, def: 0, unit: '%' },
       { key: 'settings', min: 0, max: 100, def: 5, unit: '%' },
       { key: 'input', min: 0, max: 100, def: 30, unit: '%' },
       { key: 'sidebar', min: 0, max: 100, def: 5, unit: '%' },
-      { key: 'mainblur', min: 0, max: 60, def: 24, unit: 'px' },
       { key: 'popup', min: 5, max: 100, def: 40, unit: '%' },
-      { key: 'popupblur', min: 0, max: 100, def: 40, unit: 'px' },
     ]
     const values = Object.fromEntries(SLIDERS.map((s) =>
       [s.key, Math.max(s.min, Math.min(s.max, read('dsh-desktop-glass-' + s.key, s.def)))]))
@@ -3276,13 +3276,15 @@ export function glassControlsScript(): string {
       const zh = window.__dshThemeLocale !== 'en'
       const labels = {
         title: zh ? '界面毛玻璃' : 'Interface glass',
+        groupBlur: zh ? '界面模糊' : 'Surface blur',
+        groupAlpha: zh ? '界面透明度' : 'Surface opacity',
         main: zh ? '主界面' : 'Main surface',
         settings: zh ? '设置界面' : 'Settings surface',
         input: zh ? '输入框' : 'Input surface',
         sidebar: zh ? '侧边栏' : 'Sidebar',
         mainblur: zh ? '界面模糊' : 'Surface blur',
         popup: zh ? '弹出层' : 'Popup menus',
-        popupblur: zh ? '弹出层模糊' : 'Popup blur',
+        popupblur: zh ? '弹窗模糊' : 'Popup blur',
       }
       const existing = document.querySelector('[data-dsh-glass-controls]')
       if (existing !== null) {
@@ -3290,24 +3292,33 @@ export function glassControlsScript(): string {
           const el = existing.querySelector(sel)
           if (el !== null && el.textContent !== text) el.textContent = text
         }
-        sync('[data-dsh-glass-title]', labels.title)
+        sync('[data-dsh-glass-group-blur]', labels.groupBlur)
+        sync('[data-dsh-glass-group-alpha]', labels.groupAlpha)
         for (const s of SLIDERS) sync('[data-dsh-glass-' + s.key + '-label]', labels[s.key])
         return
       }
       const control = document.createElement('div')
       control.dataset.dshGlassControls = 'true'
       control.style.cssText = 'flex-direction:column;gap:10px;padding:16px 0;display:flex'
-      const rowsHtml = SLIDERS.map((s) =>
-        '<div style="display:flex;align-items:center;gap:12px">' +
+      const BLUR_KEYS = ['mainblur', 'popupblur']
+      const ALPHA_KEYS = ['main', 'settings', 'input', 'sidebar', 'popup']
+      const sliderRow = (s) =>
+        '<div style="display:flex;align-items:center;gap:12px;padding-left:12px">' +
           '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-glass-' + s.key + '-label></span>' +
           '<input type="range" min="' + s.min + '" max="' + s.max + '" step="1" data-dsh-glass-' + s.key + ' style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-' + s.key + '-fill,' + s.def + '%),rgba(65,118,230,0.22) var(--dsh-' + s.key + '-fill,' + s.def + '%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
           '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-' + s.key + '-val></span>' +
-        '</div>').join('')
+        '</div>'
+      const groupTitle = (dataAttr, text, first) =>
+        '<div style="color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;' + (first ? '' : 'margin-top:6px;') + 'font-weight:500" ' + dataAttr + '>' + text + '</div>'
+      const blurRows = SLIDERS.filter((s) => BLUR_KEYS.includes(s.key)).map(sliderRow).join('')
+      const alphaRows = SLIDERS.filter((s) => ALPHA_KEYS.includes(s.key)).map(sliderRow).join('')
       control.innerHTML =
-        '<div style="color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px" data-dsh-glass-title></div>' +
         '<div style="display:flex;flex-direction:column;gap:10px">' +
           '<div style="display:flex;flex-direction:column;gap:4px">' +
-          rowsHtml +
+          groupTitle('data-dsh-glass-group-blur', labels.groupBlur, true) +
+          blurRows +
+          groupTitle('data-dsh-glass-group-alpha', labels.groupAlpha, false) +
+          alphaRows +
           '</div>' +
         '</div>' +
         '<style>' +
@@ -3317,8 +3328,6 @@ export function glassControlsScript(): string {
           '[data-dsh-glass-controls] input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #4176e6;box-shadow:0 1px 4px rgba(15,20,35,0.35);cursor:pointer}' +
           '[data-dsh-glass-controls] input[type=range]::-moz-range-track{height:6px;border-radius:999px;background:linear-gradient(90deg,#4176e6 var(--dsh-main-fill,35%),rgba(65,118,230,0.22) var(--dsh-main-fill,35%))}' +
         '</style>'
-      const titleEl = control.querySelector('[data-dsh-glass-title]')
-      if (titleEl !== null) titleEl.textContent = labels.title
       const sync = (sel, text) => {
         const el = control.querySelector(sel)
         if (el !== null) el.textContent = text
