@@ -10,7 +10,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { killProcessTree } from './process-tree.ts'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell, Tray } from './electron-api.ts'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, shell, Tray } from 'electron'
 // node-pty is a native module; loaded lazily so a missing/broken build does
 // not break the shell. The embedded terminal feature degrades gracefully.
 const require_ = createRequire(import.meta.url)
@@ -27,11 +27,34 @@ const APP_ID = 'ai.deepseek.dsh-desktop'
 const WINDOW_TITLE = 'DSH Desktop'
 const STDERR_TAIL_LIMIT = 4_000
 
+// The hosted SPA is a dark theme; Chromium's native form controls (e.g. the
+// <select> popup lists in 主题设置 → 光标特效) otherwise render their popup
+// menus in the system's light palette (a pale gray slab on the dark glass
+// panel — user: 弹出的颜色不适配). Forcing the dark theme makes every
+// Chromium-drawn UI (select popups, scrollbars) follow the glass theme.
+nativeTheme.themeSource = 'dark'
+
 // GPU acceleration is enabled: on this machine it renders ~3x faster than
 // software rendering (459ms/frame vs 1373ms/frame for animated redraws) with
 // a stable GPU process, so the fullscreen settings panel stays usable. If a
 // future regression reintroduces renderer pegging/crashes (blank window),
 // restore: app.disableHardwareAcceleration() + appendSwitch('disable-gpu').
+//
+// backdrop-filter needs a GPU compositor. This machine's niri Wayland session
+// has no Vulkan ('--ozone-platform=wayland' is not compatible with Vulkan),
+// so without intervention Chromium falls back to plain software rendering,
+// where backdrop-filter is silently dropped (verified: blur 0px vs 100px
+// screenshots are pixel-identical; the popup glass looked unfrosted).
+//
+// Two ANGLE backends were measured on this machine:
+//   - swiftshader (software GL): blur works, but the GPU process pegs at
+//     300-660% CPU — the whole interface janks.
+//   - gl (hardware Mesa EGL, renderD128): blur works AND the GPU process
+//     idles at ~20% CPU. 15-30x cheaper. Chosen below.
+// Must be set before the GPU process spawns, hence appendSwitch at module scope.
+if (process.platform !== 'win32' && process.platform !== 'darwin') {
+  app.commandLine.appendSwitch('use-angle', 'gl')
+}
 // Transparent windows need a 32-bit (ARGB) visual. The X server niri exposes
 // (xwayland-satellite) has none, so on Xwayland the translucent window falls
 // back to opaque 24-bit and the frosted glass is lost. The ozone platform
@@ -126,138 +149,22 @@ async function applyGlassTheme(window: BrowserWindow, theme: GlassTheme): Promis
  */
 async function applyGlass(window: BrowserWindow): Promise<void> {
   await applyGlassTheme(window, windowTheme)
+  await inject(window, () => glassGuardScript(windowAlpha))
+  await inject(window, wallpaperLayerScript)
+}
+
+/**
+ * Execute one injection script in the hosted page. Errors are non-fatal —
+ * the next did-finish-load re-injects every script anyway.
+ * @param window - the window hosting the page.
+ * @param script - a script producer (functions are called so parameterized
+ * scripts like `glassGuardScript(alpha)` stay possible).
+ */
+async function inject(window: BrowserWindow, script: () => string): Promise<void> {
   try {
-    await window.webContents.executeJavaScript(glassGuardScript(windowAlpha))
+    await window.webContents.executeJavaScript(script())
   } catch {
     // Page not ready; the next did-finish-load re-applies it.
-  }
-  try {
-    await window.webContents.executeJavaScript(wallpaperLayerScript())
-  } catch {
-    // Page not ready; the next did-finish-load re-applies it.
-  }
-}
-
-/**
- * Inject the background-opacity slider into the hosted settings page. The
- * script mounts itself below the Appearance row (通用设置 → 外观) whenever
- * that panel renders; values travel to the main process through the preload
- * bridge. Errors are non-fatal: the next did-finish-load re-injects.
- * @param window - the window hosting the settings page.
- */
-async function injectAlphaControl(window: BrowserWindow): Promise<void> {
-  try {
-    await window.webContents.executeJavaScript(alphaControlScript())
-  } catch {
-    // Settings panel not ready; the next did-finish-load re-injects.
-  }
-}
-
-/**
- * Inject the "Theme Settings" (主题设置) entry into the hosted settings page:
- * a new sidebar nav item that hosts the background-opacity slider, the cursor
- * effects and the wallpaper picker (moved out of 通用设置 → 外观). The script
- * self-heals; errors are non-fatal, the next did-finish-load re-injects.
- * @param window - the window hosting the settings page.
- */
-async function injectThemeSettings(window: BrowserWindow): Promise<void> {
-  try {
-    await window.webContents.executeJavaScript(themeSettingsScript())
-  } catch {
-    // Settings panel not ready; the next did-finish-load re-injects.
-  }
-}
-
-/**
- * Inject the background-wallpaper control into the hosted settings page,
- * mounted below the background-opacity slider inside the Theme Settings panel
- * (主题设置). The button
- * opens the system file picker via the `dsh:wallpaper-pick` IPC; the choice
- * is persisted by the main process. Errors are non-fatal, the next
- * did-finish-load re-injects.
- * @param window - the window hosting the settings page.
- */
-async function injectWallpaperControl(window: BrowserWindow): Promise<void> {
-  try {
-    await window.webContents.executeJavaScript(wallpaperControlScript())
-  } catch {
-    // Settings panel not ready; the next did-finish-load re-injects.
-  }
-}
-
-/**
- * Inject the desktop-shell feature toggles into the hosted settings page,
- * mounted below the wallpaper control inside the Theme Settings panel
- * (主题设置): show/hide the file browser and terminal dock, and the brand
- * color-switch interval. Choices are persisted in the renderer's localStorage
- * and applied immediately via window events. Errors are non-fatal, the next
- * did-finish-load re-injects.
- * @param window - the window hosting the settings page.
- */
-async function injectFeatureControl(window: BrowserWindow): Promise<void> {
-  try {
-    await window.webContents.executeJavaScript(featureControlScript())
-  } catch {
-    // Settings panel not ready; the next did-finish-load re-injects.
-  }
-}
-
-/**
- * Inject the unified frosted-glass controls into the hosted settings page,
- * mounted in the Theme Settings panel (主题设置 → 界面毛玻璃): one slider for
- * the main surface (composer/bubbles/popup menus) and one for the settings
- * surface. Values persist to localStorage and re-theme whole surface families
- * at once via CSS variables. Errors are non-fatal, the next did-finish-load
- * re-injects.
- * @param window - the window hosting the settings page.
- */
-async function injectGlassControls(window: BrowserWindow): Promise<void> {
-  try {
-    await window.webContents.executeJavaScript(glassControlsScript())
-  } catch {
-    // Settings panel not ready; the next did-finish-load re-injects.
-  }
-}
-
-/**
- * Inject the ambient texture layers, floating sidebar/details cards, compact
- * new-session button, living brand (75px logo + configurable color cycling,
- * default 10s) and the
- * hero glow animation into the hosted page. Platform-independent; errors are
- * non-fatal, the next did-finish-load re-injects.
- * @param window - the window hosting the page.
- */
-async function injectAmbientStyle(window: BrowserWindow): Promise<void> {
-  try {
-    await window.webContents.executeJavaScript(ambientStyleScript())
-  } catch {
-    // Page not ready; the next did-finish-load re-injects.
-  }
-  try {
-    // Composer ⬆/⬇ input history (independent of the terminal panel).
-    await window.webContents.executeJavaScript(inputHistoryScript())
-  } catch {
-    // Page not ready; the next did-finish-load re-injects.
-  }
-  try {
-    // Whale-spray cursor effect over the non-message areas.
-    await window.webContents.executeJavaScript(whaleSprayScript())
-  } catch {
-    // Page not ready; the next did-finish-load re-injects.
-  }
-}
-
-/**
- * Inject the ambient decoration engine (particle whale / marine life /
- * interactive mesh) and its 环境装饰 toggle group into the hosted page.
- * Errors are non-fatal; the next did-finish-load re-injects.
- * @param window - the window hosting the page.
- */
-async function injectAmbientDecor(window: BrowserWindow): Promise<void> {
-  try {
-    await window.webContents.executeJavaScript(ambientDecorScript())
-  } catch {
-    // Page not ready; the next did-finish-load re-injects.
   }
 }
 
@@ -367,11 +274,6 @@ function pushToWindow(channel: string, payload: unknown): void {
   }
 }
 
-/** The working directory a terminal should start in (same as the server). */
-function launchCwd(): string {
-  return process.cwd()
-}
-
 /**
  * Open a URL in the system browser — but only http(s) links: the GUI must
  * not be able to launch arbitrary programs via `file://` or a custom
@@ -449,13 +351,21 @@ function createWindow(url: URL): void {
     if (glassTimer !== undefined) clearTimeout(glassTimer)
     glassTimer = setTimeout(() => {
       void applyGlass(window)
-      void injectThemeSettings(window)
-      void injectAlphaControl(window)
-      void injectWallpaperControl(window)
-      void injectFeatureControl(window)
-      void injectGlassControls(window)
-      void injectAmbientStyle(window)
-      void injectAmbientDecor(window)
+      // Injection order matters: ambientStyle must precede ambientDecor (its
+      // rules win on ties), and everything must follow applyGlass's theme.
+      for (const script of [
+        themeSettingsScript,
+        alphaControlScript,
+        wallpaperControlScript,
+        featureControlScript,
+        glassControlsScript,
+        ambientStyleScript,
+        ambientDecorScript,
+        inputHistoryScript,
+        whaleSprayScript,
+      ]) {
+        void inject(window, script)
+      }
       void injectPlugins(window)
       void injectTerminal(window)
     }, 800)
@@ -745,7 +655,7 @@ if (!app.requestSingleInstanceLock()) {
     try {
       const handle = ptyRegistry.open(
         tabId,
-        typeof cwd === 'string' && cwd !== '' ? cwd : launchCwd(),
+        typeof cwd === 'string' && cwd !== '' ? cwd : process.cwd(),
       )
       // Attach the push listeners exactly once per tab: a reused handle must
       // not double-deliver output. The listeners are registered before the
@@ -894,7 +804,7 @@ if (!app.requestSingleInstanceLock()) {
   // to { isRepo: false } and the tree renders without badges.
   ipcMain.handle('dsh:git-status', async () => {
     try {
-      return await gitStatus(launchCwd())
+      return await gitStatus(process.cwd())
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) }
     }

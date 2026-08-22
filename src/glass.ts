@@ -31,10 +31,8 @@ export interface GlassSettings {
 /** How the hosted page's dark/light theme is chosen. */
 export type GlassTheme = 'dark' | 'light' | 'system'
 
-export const OPACITY_LEVELS = [1.0, 0.85, 0.7, 0.55, 0.4] as const
-export const DEFAULT_ALPHA = 0.4
+export const DEFAULT_ALPHA = 0
 export const DEFAULT_THEME: GlassTheme = 'system'
-export const THEMES: readonly GlassTheme[] = ['system', 'dark', 'light']
 
 /**
  * Solid deep-blue glass tones for floating chrome (dialogs, dropdown menus,
@@ -112,55 +110,6 @@ export function glassWindowOptions(platform: NodeJS.Platform): BrowserWindowCons
       // Linux: transparency is the carrier; the glass tint lives in page CSS.
       return { transparent: true, frame: false }
   }
-}
-
-/**
- * CSS injected into the hosted page. On Windows/macOS the system effect is
- * the translucency, so the page must not paint its own opaque background.
- * On Linux the CSS paints a translucent glass tint whose alpha follows the
- * user setting. Returns null when nothing should be injected.
- *
- * The DeepSeek Harness SPA themes its entire UI through CSS custom properties
- * (--dsw-alias-bg-*, --dsw-specific-*), so painting `html, body` alone is
- * hidden behind the app's own opaque containers. The canvas backgrounds must
- * be made translucent by overriding those variables. Dark and light themes
- * define different palettes, so each is tinted with its own glass color.
- * Floating chrome (dialogs, menus, tooltips, inputs) gets solid deep-blue
- * glass tones (see SURFACE_DARK/SURFACE_LIGHT) instead of the theme's gray.
- */
-export function glassCss(platform: NodeJS.Platform, alpha: number): string | null {
-  if (platform === 'win32' || platform === 'darwin') {
-    return 'html, body { background: transparent !important; }'
-  }
-  // The page stacks two full-window canvas layers (the app frame and the
-  // content panel), so the requested alpha is reached by compensating per
-  // layer: a_layer = 1 - (1-a)^(1/2). Verified against the composited output.
-  const a = 1 - Math.pow(1 - clampUnit(alpha), 1 / 2)
-  // Only the large "canvas" surfaces get the translucent glass tint: the app
-  // frame, the content panel and the sidebar. Floating chrome (dialogs, menus,
-  // tooltips, input surfaces) is painted in solid deep-blue glass tones so it
-  // stays readable over the translucent background and is no longer gray.
-  const canvasProps = [
-    '--dsw-alias-bg-base',
-    '--dsw-alias-bg-layer-1',
-    '--dsw-specific-sidebar-fill',
-  ]
-  const tint = (r: number, g: number, b: number): string =>
-    `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`
-  const surfaceCss = (props: Record<string, string>): string =>
-    Object.entries(props).map(([key, value]) => `${key}: ${value} !important;`).join(' ')
-  const dark = canvasProps.map((p) => `${p}: ${tint(15, 17, 23)} !important;`).join(' ')
-  const light = canvasProps.map((p) => `${p}: ${tint(245, 246, 247)} !important;`).join(' ')
-  return [
-    'body[data-ds-dark-theme] { ' + dark + ' ' + surfaceCss(SURFACE_DARK) + ' }',
-    'body:not([data-ds-dark-theme]) { ' + light + ' ' + surfaceCss(SURFACE_LIGHT) + ' }',
-    // The canvas itself must be transparent so the window shows whatever is
-    // behind it; the glass tint lives in the UI canvas variables above.
-    'html, body { background: transparent !important; }',
-    // Progressive enhancement: blur the pane's own backdrop where the
-    // compositor supports it (some Wayland setups). Harmless elsewhere.
-    'body { backdrop-filter: blur(24px) saturate(140%); -webkit-backdrop-filter: blur(24px) saturate(140%); }',
-  ].join('\n')
 }
 
 const SETTINGS_FILE = 'glass-settings.json'
@@ -409,7 +358,13 @@ export function alphaControlScript(): string {
       holder.appendChild(control)
     }
     mount()
-    const obs = new MutationObserver(mount)
+    let pending = false
+    const schedule = () => {
+      if (pending) return
+      pending = true
+      requestAnimationFrame(() => { pending = false; mount() })
+    }
+    const obs = new MutationObserver(schedule)
     window.__dshAlphaControlObserver = obs
     // childList: row (re)mounts; characterData: locale switches swap text in
     // place, which must re-sync the mounted control's title.
@@ -608,7 +563,15 @@ export function ambientStyleScript(): string {
       // keepComposerFloating) the card's parent is a flex column that
       // stretches it to the full center-column width; restore the historical
       // centered 780px width.
-      '[class*=\"uV2eYG_card\"] { width: 780px !important; max-width: calc(100% - 16px) !important; margin-left: auto !important; margin-right: auto !important; background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      // The composer card hosts the popup MENUS (_sideTop_/_menu/_list_) as
+      // children. Chromium drops a child's backdrop-filter when an ancestor
+      // has one (the child samples the ancestor's composited result — the
+      // nested blur never renders; verified: menu blur 100px vs 0px
+      // pixel-identical while the card carried a backdrop-filter). So the
+      // card itself keeps only its translucent tint: the menus' own blur
+      // works, and the 30% tint over the already-frosted column reads the
+      // same. Its backdrop-filter is intentionally omitted.
+      '[class*=\"uV2eYG_card\"] { width: 780px !important; max-width: calc(100% - 16px) !important; margin-left: auto !important; margin-right: auto !important; background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; }',
       // Queued-message dock (插话发送, _7yHdaG_dock): its width follows the
       // SPA's --dsh-composer-card-max-width default, which renders narrower
       // than the 780px input card the user sees (user: 太窄了). Pin it to the
@@ -656,6 +619,50 @@ export function ambientStyleScript(): string {
       // 已用, JObwrW_panel) also rides the same variable via
       // --dsw-specific-menu and joins the family.
       '[class*=\"_menu\"], [class*=\"_sideTop_\"], [class*=\"_7yHdaG_dock\"], [class*=\"_7yHdaG_panel\"], [class*=\"JObwrW_panel\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; }',
+      // Sidebar session hover-preview card (CSS-modules class _card_<hash>_<n>)
+      // paints an OPAQUE rgb(44,44,46) with no blur — a solid slab over the
+      // glass. Scanned the page: the hover preview card is the only _card_
+      // floating layer (body-direct, so the broad selector cannot hit in-tree
+      // cards). Same popup family treatment, but MORE transparent than the
+      // popup slider default (user: 鼠标停留弹出的框没有模糊和透明 / 可以再透明点);
+      // the wildcard keeps it working across web upgrades that re-hash the class.
+      'body > [class*=\"_card_\"] { background-color: rgba(39,46,62,0.45) !important; backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; }',
+      // Settings-panel selector dropdowns (标准模式 / Full access / 语言 /
+      // 排队发送 pickers): the shared portal-list component (CSS-modules
+      // group _list_ / _submenu_) paints --dsw-specific-menu as an OPAQUE
+      // blue-gray slab, so every settings dropdown reads as a solid block on
+      // the glass panel. Repaint it with the same popup glass as the composer
+      // picker menus (弹出层 slider) so all dropdowns join the glass family.
+      '[class*=\"_list_\"], [class*=\"_submenu_\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; }',
+      // Settings-panel nav item (通用设置/模型/插件/Agent 预设/插件市场/主题设置):
+      // DSH paints hover/active with --dsw-specific-sidebar-nav-item-hover/-active,
+      // OPAQUE neutral grays (#2c2c2e / #43454a) that read as solid gray slabs
+      // on the frosted settings panel (user: 背景颜色是灰色的, 跟毛玻璃不匹配).
+      // Repaint both with translucent blue-gray frosted glass — same tone as
+      // the input card — so the selected nav item reads as a glass chip.
+      '[class*=\"VOzbGW_navCell\"]:hover { background-color: rgba(39,46,62,0.35) !important; }',
+      '[class*=\"VOzbGW_navCell\"][class*=\"VOzbGW_active\"] { background-color: rgba(39,46,62,0.55) !important; }',
+      // Settings-panel form controls (光标特效 icon pickers 侧边栏/右侧, 标题
+      // 颜色切换时间 seconds input): DSH paints them with
+      // --dsw-alias-bg-layer-3 (OPAQUE rgb(39,46,62)) so they read as solid
+      // blue-gray slabs on the frosted panel (user: 颜色也不对). Repaint them
+      // with translucent blue-gray glass — same family as the nav chips — so
+      // the controls join the glass theme. Native popup lists stay dark
+      // because the panel already sets color-scheme: dark.
+      '[class*=\"VOzbGW_options\"] select, [class*=\"VOzbGW_options\"] input[type=\"number\"] { background-color: rgba(39,46,62,0.45) !important; }',
+      // Settings-panel selector buttons (标准模式 / Full access / 语言 / 排队
+      // 发送): DSH paints them with --dsw-alias-bg-module-platform (OPAQUE
+      // rgb(39,46,62)), so the resting button is a solid blue-gray block while
+      // the popup it opens is already frosted (user: 默认的颜色是没修改的 只有
+      // 点击后 颜色是修改后的). Repaint with the same translucent glass as the
+      // other controls so button and popup read as one family.
+      '[class*=\"_selector\"] { background-color: rgba(39,46,62,0.45) !important; }',
+      // 光标特效 icon pickers (原生 <select>, 侧边栏/右侧): the settings row
+      // flex-stretches them to the full panel width (~484px, user: 太长了).
+      // Cap the width and pin them to the right edge of their row
+      // (margin-left:auto absorbs the free space; flex:0 0 auto overrides the
+      // SPA's inline flex:1 so the cap actually holds).
+      '[class*=\"VOzbGW_options\"] select { max-width: 200px !important; flex: 0 0 auto !important; margin-left: auto !important; }',
       // Scroll-to-bottom floating button (回到底部, Md3f7G_toBottom, rides
       // inside the sticky Md3f7G_toBottomSlot): DSH paints it with
       // --dsw-alias-button-floating-fill (rgb(32,38,52), too dark on the
@@ -897,7 +904,7 @@ export function ambientStyleScript(): string {
 
     // Every brandCycleMs() pick fresh whale + gradient colors and repaint
     // whichever brand surface is visible. The interval is user-configurable
-    // (主题设置 → 标题颜色切换时间, persisted in localStorage; default 10s);
+    // (主题设置 → 颜色切换时间, persisted in localStorage; default 10s);
     // the timestamp guard dedupes the 1s heartbeat.
     const brandCycleMs = () => {
       try {
@@ -1152,7 +1159,7 @@ export function whaleSprayScript(): string {
 
     // Particles: kind 'drop' (water), 'star', 'snow', 'spark'.
     const drops = []
-    const MAX_DROPS = 160
+    const MAX_DROPS = 80
     const pushDrop = (d) => {
       if (drops.length >= MAX_DROPS) drops.shift()
       drops.push(d)
@@ -1490,7 +1497,7 @@ export function inputHistoryScript(): string {
           toast('正在备份 ' + r.path + ' …')
           window.dshDesktop.backup.run(r.path, args).then((res) => {
             if (res && res.ok && typeof res.backupDir === 'string') {
-              toast('备份完成 ✓\n' + res.backupDir)
+              toast('备份完成 ✓\\n' + res.backupDir)
               // Clear the command from the input.
               setValue(input, '')
             } else if (res && res.error) {
@@ -1511,7 +1518,13 @@ export function inputHistoryScript(): string {
         input.addEventListener('keydown', onKey)
       }
     }
-    const obs = new MutationObserver(attach)
+    let pending = false
+    const schedule = () => {
+      if (pending) return
+      pending = true
+      requestAnimationFrame(() => { pending = false; attach() })
+    }
+    const obs = new MutationObserver(schedule)
     obs.observe(document.body, { childList: true, subtree: true })
     attach()
     window.__dshInputHistory = {
@@ -1607,7 +1620,13 @@ export function terminalScript(): string {
       return true
     }
     moveSessionLog()
-    const sessObs = new MutationObserver(() => { moveSessionLog(); watchSessLog() })
+    let sessPending = false
+    const sessSchedule = () => {
+      if (sessPending) return
+      sessPending = true
+      requestAnimationFrame(() => { sessPending = false; moveSessionLog(); watchSessLog() })
+    }
+    const sessObs = new MutationObserver(sessSchedule)
     sessObs.observe(document.body, { childList: true, subtree: true })
     // Collapsing the sidebar slides the footer off-screen; the Session log
     // button must hide along with it. Class/style mutations can miss the
@@ -1729,10 +1748,18 @@ export function terminalScript(): string {
       sidebarResizeObs.observe(side)
     }
     watchSidebarSize(document.querySelector('[class*="_sidebarCol"]'))
-    const sidebarRebuildObs = new MutationObserver(() => {
+    let rebuildPending = false
+    const rebuildTick = () => {
+      rebuildPending = false
       const side = document.querySelector('[class*="_sidebarCol"]')
       if (side !== null && side !== watchedSidebar) watchSidebarSize(side)
-    })
+    }
+    const scheduleRebuild = () => {
+      if (rebuildPending) return
+      rebuildPending = true
+      requestAnimationFrame(rebuildTick)
+    }
+    const sidebarRebuildObs = new MutationObserver(scheduleRebuild)
     sidebarRebuildObs.observe(document.body, { childList: true, subtree: true })
 
     // ── Terminal dock (bottom bar right of the conversation sidebar) ──
@@ -2760,7 +2787,13 @@ export function wallpaperLayerScript(): string {
       el.style.backgroundImage = url ? 'url("' + url + '")' : 'none'
     }
     ensure()
-    const obs = new MutationObserver(ensure)
+    let pending = false
+    const schedule = () => {
+      if (pending) return
+      pending = true
+      requestAnimationFrame(() => { pending = false; ensure() })
+    }
+    const obs = new MutationObserver(schedule)
     window.__dshWallpaperObserver = obs
     obs.observe(document.body, { childList: true, subtree: true })
     window.dshDesktop.wallpaper.get().then((res) => {
@@ -2980,7 +3013,13 @@ export function wallpaperControlScript(): string {
       holder.appendChild(control)
     }
     mount()
-    const obs = new MutationObserver(mount)
+    let pending = false
+    const schedule = () => {
+      if (pending) return
+      pending = true
+      requestAnimationFrame(() => { pending = false; mount() })
+    }
+    const obs = new MutationObserver(schedule)
     window.__dshWallpaperControlObserver = obs
     // childList: row (re)mounts; characterData: locale switches swap text in
     // place, which must re-sync the mounted control's title.
@@ -3031,7 +3070,7 @@ export function featureControlScript(): string {
         title: zh ? '桌面功能' : 'Desktop features',
         files: zh ? '显示浏览文件夹' : 'Show file browser',
         term: zh ? '显示终端' : 'Show terminal',
-        cycle: zh ? '标题颜色切换时间' : 'Brand color interval',
+        cycle: zh ? '颜色切换时间' : 'Brand color interval',
         unit: zh ? '秒' : 's',
       }
       // ── Cycle interval control (own block, ABOVE the opacity slider) ──
@@ -3143,7 +3182,13 @@ export function featureControlScript(): string {
       holder.appendChild(control)
     }
     mount()
-    const obs = new MutationObserver(mount)
+    let pending = false
+    const schedule = () => {
+      if (pending) return
+      pending = true
+      requestAnimationFrame(() => { pending = false; mount() })
+    }
+    const obs = new MutationObserver(schedule)
     window.__dshFeatureControlObserver = obs
     // childList: row (re)mounts; characterData: locale switches swap text in
     // place, which must re-sync the mounted controls' labels.
@@ -3170,7 +3215,6 @@ export function glassControlsScript(): string {
       window.__dshGlassControlObserver.disconnect()
       window.__dshGlassControlObserver = undefined
     }
-    const KEYS = { main: 'dsh-desktop-glass-main', settings: 'dsh-desktop-glass-settings', input: 'dsh-desktop-glass-input', sidebar: 'dsh-desktop-glass-sidebar', popup: 'dsh-desktop-glass-popup' }
     const read = (key, fallback) => {
       try {
         const raw = localStorage.getItem(key)
@@ -3184,24 +3228,21 @@ export function glassControlsScript(): string {
     const write = (key, value) => {
       try { localStorage.setItem(key, String(value)) } catch {}
     }
-    let mainVal = Math.max(0, Math.min(60, read(KEYS.main, 35)))
-    let settingsVal = Math.max(20, Math.min(60, read(KEYS.settings, 35)))
-    // The input card's glass is independent: it rides the Full access blue-gray
-    // (rgb(39,46,62)) with a user alpha 20..100% (100 = the opaque look the
-    // user asked for).
-    let inputVal = Math.max(0, Math.min(100, read(KEYS.input, 100)))
-    // The sidebar has its own glass strength, independent of the main surface.
-    let sidebarVal = Math.max(0, Math.min(60, read(KEYS.sidebar, 35)))
-    // Popup menus (composer + / access-mode / model pickers / queued-message
-    // dock, e.g. _3e4SsG_menu, _7KE1Ra_menu, _sideTop_, _7yHdaG_dock):
-    // blue-gray rgba(39,46,62) — the same tone as the input card, per user
-    // request. Frosted look follows the SIDEBAR recipe the user pointed at:
-    // a light 7% tint over the wallpaper with no grain — the sidebar reads
-    // as naturally frosted exactly because the wallpaper dominates and there
-    // is no texture (the noise grain the user saw was "力度太大 不正常").
-    // The slider runs 5..100, default 7, mirroring the sidebar's alpha;
-    // 100 = fully solid slab.
-    let popupVal = Math.max(5, Math.min(100, read(KEYS.popup, 7)))
+    // One slider per surface. The popup and input card ride the blue-gray
+    // rgba(39,46,62) tone; the input defaults to the opaque look the user
+    // asked for. mainblur is the big-surface frosted strength (px), shared by
+    // main/settings/sidebar/input; popupblur is the popup family's own.
+    const SLIDERS = [
+      { key: 'main', min: 0, max: 100, def: 0, unit: '%' },
+      { key: 'settings', min: 0, max: 100, def: 5, unit: '%' },
+      { key: 'input', min: 0, max: 100, def: 30, unit: '%' },
+      { key: 'sidebar', min: 0, max: 100, def: 5, unit: '%' },
+      { key: 'mainblur', min: 0, max: 60, def: 24, unit: 'px' },
+      { key: 'popup', min: 5, max: 100, def: 40, unit: '%' },
+      { key: 'popupblur', min: 0, max: 100, def: 40, unit: 'px' },
+    ]
+    const values = Object.fromEntries(SLIDERS.map((s) =>
+      [s.key, Math.max(s.min, Math.min(s.max, read('dsh-desktop-glass-' + s.key, s.def)))]))
     // One style node carries the glass variables; ambientStyleScript's
     // rules reference them with the same values as defaults, so this node only
     // matters once the user deviates from the default.
@@ -3213,15 +3254,19 @@ export function glassControlsScript(): string {
         document.head.appendChild(s)
       }
       const a = (v) => 'rgba(15,17,23,' + (v / 100).toFixed(3) + ')'
+      const b = (v) => 'rgba(39,46,62,' + (v / 100).toFixed(3) + ')'
+      // Hardware GL (use-angle=gl, see main.ts) renders full-window
+      // backdrop-filters cheaply (~20% GPU process vs 660% under SwiftShader),
+      // so the big panes get real frosted blur again, driven by mainblur.
       s.textContent = 'body { ' +
-        '--dsh-glass-main-bg: ' + a(mainVal) + '; ' +
-        '--dsh-glass-main-blur: 24px; ' +
-        '--dsh-glass-settings-bg: ' + a(settingsVal) + '; ' +
-        '--dsh-glass-settings-blur: 24px; ' +
-        '--dsh-glass-input-bg: rgba(39,46,62,' + (inputVal / 100).toFixed(3) + '); ' +
-        '--dsh-glass-sidebar-bg: ' + a(sidebarVal) + '; ' +
-        '--dsh-glass-popup-bg: rgba(39,46,62,' + (popupVal / 100).toFixed(3) + '); ' +
-        '--dsh-glass-popup-blur: 40px; ' +
+        '--dsh-glass-main-bg: ' + a(values.main) + '; ' +
+        '--dsh-glass-main-blur: ' + values.mainblur + 'px; ' +
+        '--dsh-glass-settings-bg: ' + a(values.settings) + '; ' +
+        '--dsh-glass-settings-blur: ' + values.mainblur + 'px; ' +
+        '--dsh-glass-input-bg: ' + b(values.input) + '; ' +
+        '--dsh-glass-sidebar-bg: ' + a(values.sidebar) + '; ' +
+        '--dsh-glass-popup-bg: ' + b(values.popup) + '; ' +
+        '--dsh-glass-popup-blur: ' + values.popupblur + 'px; ' +
       '}'
     }
     const mount = () => {
@@ -3235,7 +3280,9 @@ export function glassControlsScript(): string {
         settings: zh ? '设置界面' : 'Settings surface',
         input: zh ? '输入框' : 'Input surface',
         sidebar: zh ? '侧边栏' : 'Sidebar',
+        mainblur: zh ? '界面模糊' : 'Surface blur',
         popup: zh ? '弹出层' : 'Popup menus',
+        popupblur: zh ? '弹出层模糊' : 'Popup blur',
       }
       const existing = document.querySelector('[data-dsh-glass-controls]')
       if (existing !== null) {
@@ -3244,45 +3291,23 @@ export function glassControlsScript(): string {
           if (el !== null && el.textContent !== text) el.textContent = text
         }
         sync('[data-dsh-glass-title]', labels.title)
-        sync('[data-dsh-glass-main-label]', labels.main)
-        sync('[data-dsh-glass-settings-label]', labels.settings)
-        sync('[data-dsh-glass-input-label]', labels.input)
-        sync('[data-dsh-glass-sidebar-label]', labels.sidebar)
-        sync('[data-dsh-glass-popup-label]', labels.popup)
+        for (const s of SLIDERS) sync('[data-dsh-glass-' + s.key + '-label]', labels[s.key])
         return
       }
       const control = document.createElement('div')
       control.dataset.dshGlassControls = 'true'
       control.style.cssText = 'flex-direction:column;gap:10px;padding:16px 0;display:flex'
+      const rowsHtml = SLIDERS.map((s) =>
+        '<div style="display:flex;align-items:center;gap:12px">' +
+          '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-glass-' + s.key + '-label></span>' +
+          '<input type="range" min="' + s.min + '" max="' + s.max + '" step="1" data-dsh-glass-' + s.key + ' style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-' + s.key + '-fill,' + s.def + '%),rgba(65,118,230,0.22) var(--dsh-' + s.key + '-fill,' + s.def + '%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
+          '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-' + s.key + '-val></span>' +
+        '</div>').join('')
       control.innerHTML =
         '<div style="color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px" data-dsh-glass-title></div>' +
         '<div style="display:flex;flex-direction:column;gap:10px">' +
           '<div style="display:flex;flex-direction:column;gap:4px">' +
-            '<div style="display:flex;align-items:center;gap:12px">' +
-              '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-glass-main-label></span>' +
-              '<input type="range" min="0" max="60" step="1" data-dsh-glass-main style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-main-fill,35%),rgba(65,118,230,0.22) var(--dsh-main-fill,35%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
-              '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-main-val></span>' +
-            '</div>' +
-            '<div style="display:flex;align-items:center;gap:12px">' +
-              '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-glass-settings-label></span>' +
-              '<input type="range" min="20" max="60" step="1" data-dsh-glass-settings style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-settings-fill,35%),rgba(65,118,230,0.22) var(--dsh-settings-fill,35%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
-              '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-settings-val></span>' +
-            '</div>' +
-            '<div style="display:flex;align-items:center;gap:12px">' +
-              '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-glass-input-label></span>' +
-              '<input type="range" min="0" max="100" step="1" data-dsh-glass-input style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-input-fill,100%),rgba(65,118,230,0.22) var(--dsh-input-fill,100%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
-              '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-input-val></span>' +
-            '</div>' +
-            '<div style="display:flex;align-items:center;gap:12px">' +
-              '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-glass-sidebar-label></span>' +
-              '<input type="range" min="0" max="60" step="1" data-dsh-glass-sidebar style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-sidebar-fill,35%),rgba(65,118,230,0.22) var(--dsh-sidebar-fill,35%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
-              '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-sidebar-val></span>' +
-            '</div>' +
-            '<div style="display:flex;align-items:center;gap:12px">' +
-              '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;flex:1" data-dsh-glass-popup-label></span>' +
-              '<input type="range" min="5" max="100" step="1" data-dsh-glass-popup style="flex:1;cursor:pointer;-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;background:linear-gradient(90deg,#4176e6 var(--dsh-popup-fill,7%),rgba(65,118,230,0.22) var(--dsh-popup-fill,7%));box-shadow:inset 0 0 0 1px rgba(65,118,230,0.25)">' +
-              '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:40px;text-align:right" data-dsh-glass-popup-val></span>' +
-            '</div>' +
+          rowsHtml +
           '</div>' +
         '</div>' +
         '<style>' +
@@ -3298,82 +3323,26 @@ export function glassControlsScript(): string {
         const el = control.querySelector(sel)
         if (el !== null) el.textContent = text
       }
-      sync('[data-dsh-glass-main-label]', labels.main)
-      sync('[data-dsh-glass-settings-label]', labels.settings)
-      sync('[data-dsh-glass-input-label]', labels.input)
-      sync('[data-dsh-glass-sidebar-label]', labels.sidebar)
-      sync('[data-dsh-glass-popup-label]', labels.popup)
-      const mainSlider = control.querySelector('[data-dsh-glass-main]')
-      const settingsSlider = control.querySelector('[data-dsh-glass-settings]')
-      const inputSlider = control.querySelector('[data-dsh-glass-input]')
-      const sidebarSlider = control.querySelector('[data-dsh-glass-sidebar]')
-      const popupSlider = control.querySelector('[data-dsh-glass-popup]')
-      const mainValEl = control.querySelector('[data-dsh-glass-main-val]')
-      const settingsValEl = control.querySelector('[data-dsh-glass-settings-val]')
-      const inputValEl = control.querySelector('[data-dsh-glass-input-val]')
-      const sidebarValEl = control.querySelector('[data-dsh-glass-sidebar-val]')
-      const popupValEl = control.querySelector('[data-dsh-glass-popup-val]')
-      if (mainSlider === null || settingsSlider === null || inputSlider === null || sidebarSlider === null || popupSlider === null || mainValEl === null || settingsValEl === null || inputValEl === null || sidebarValEl === null || popupValEl === null) return
-      const renderMain = () => {
-        mainSlider.value = String(mainVal)
-        mainValEl.textContent = mainVal + '%'
-        mainSlider.style.setProperty('--dsh-main-fill', ((mainVal) / 60 * 100).toFixed(1) + '%')
+      for (const s of SLIDERS) sync('[data-dsh-glass-' + s.key + '-label]', labels[s.key])
+      for (const s of SLIDERS) {
+        const slider = control.querySelector('[data-dsh-glass-' + s.key + ']')
+        const valEl = control.querySelector('[data-dsh-glass-' + s.key + '-val]')
+        if (slider === null || valEl === null) continue
+        const render = () => {
+          const v = values[s.key]
+          slider.value = String(v)
+          valEl.textContent = v + (s.unit ?? '%')
+          const pct = (v - s.min) / (s.max - s.min) * 100
+          slider.style.setProperty('--dsh-' + s.key + '-fill', pct.toFixed(1) + '%')
+        }
+        slider.addEventListener('input', () => {
+          values[s.key] = Math.round(Number(slider.value))
+          write('dsh-desktop-glass-' + s.key, values[s.key])
+          render()
+          applyVars()
+        })
+        render()
       }
-      const renderSettings = () => {
-        settingsSlider.value = String(settingsVal)
-        settingsValEl.textContent = settingsVal + '%'
-        settingsSlider.style.setProperty('--dsh-settings-fill', ((settingsVal - 20) / 40 * 100).toFixed(1) + '%')
-      }
-      const renderInput = () => {
-        inputSlider.value = String(inputVal)
-        inputValEl.textContent = inputVal + '%'
-        inputSlider.style.setProperty('--dsh-input-fill', ((inputVal) / 100 * 100).toFixed(1) + '%')
-      }
-      const renderSidebar = () => {
-        sidebarSlider.value = String(sidebarVal)
-        sidebarValEl.textContent = sidebarVal + '%'
-        sidebarSlider.style.setProperty('--dsh-sidebar-fill', ((sidebarVal) / 60 * 100).toFixed(1) + '%')
-      }
-      const renderPopup = () => {
-        popupSlider.value = String(popupVal)
-        popupValEl.textContent = popupVal + '%'
-        popupSlider.style.setProperty('--dsh-popup-fill', ((popupVal - 5) / 95 * 100).toFixed(1) + '%')
-      }
-      mainSlider.addEventListener('input', () => {
-        mainVal = Math.round(Number(mainSlider.value))
-        write(KEYS.main, mainVal)
-        renderMain()
-        applyVars()
-      })
-      settingsSlider.addEventListener('input', () => {
-        settingsVal = Math.round(Number(settingsSlider.value))
-        write(KEYS.settings, settingsVal)
-        renderSettings()
-        applyVars()
-      })
-      inputSlider.addEventListener('input', () => {
-        inputVal = Math.round(Number(inputSlider.value))
-        write(KEYS.input, inputVal)
-        renderInput()
-        applyVars()
-      })
-      sidebarSlider.addEventListener('input', () => {
-        sidebarVal = Math.round(Number(sidebarSlider.value))
-        write(KEYS.sidebar, sidebarVal)
-        renderSidebar()
-        applyVars()
-      })
-      popupSlider.addEventListener('input', () => {
-        popupVal = Math.round(Number(popupSlider.value))
-        write(KEYS.popup, popupVal)
-        renderPopup()
-        applyVars()
-      })
-      renderMain()
-      renderSettings()
-      renderInput()
-      renderSidebar()
-      renderPopup()
       const holder = panel.querySelector('[data-dsh-theme-glass-slot]') || panel
       holder.appendChild(control)
     }
@@ -3403,10 +3372,15 @@ export function glassControlsScript(): string {
       if (jm !== undefined && jm.style.order !== '0') jm.style.order = '0'
     }
     reorderWallpaper()
-    const obs = new MutationObserver(() => {
-      mount()
-      reorderWallpaper()
-    })
+    // The body observer keeps the glass controls mounted and the section
+    // order applied while the settings panel is open.
+    let pending = false
+    const schedule = () => {
+      if (pending) return
+      pending = true
+      requestAnimationFrame(() => { pending = false; mount(); reorderWallpaper() })
+    }
+    const obs = new MutationObserver(schedule)
     window.__dshGlassControlObserver = obs
     obs.observe(document.body, { childList: true, subtree: true, characterData: true })
   })()`
@@ -3624,7 +3598,7 @@ export function themeSettingsScript(): string {
     // our panel on the first open). A body-wide attributes observer would
     // storm the renderer — the SPA churns class names and DOM nodes
     // constantly.
-    const obs = new MutationObserver(() => {
+    const healTick = () => {
       const list = findNavList()
       if (list === null) {
         // Settings panel closed entirely (nav unmounted): reset so the next
@@ -3653,7 +3627,14 @@ export function themeSettingsScript(): string {
           if (state.open && document.querySelector('[data-dsh-theme-panel]') === null) openPanel()
         }, 30)
       }
-    })
+    }
+    let pending = false
+    const schedule = () => {
+      if (pending) return
+      pending = true
+      requestAnimationFrame(() => { pending = false; healTick() })
+    }
+    const obs = new MutationObserver(schedule)
     obs.observe(document.body, { childList: true, subtree: true })
     ensureCell()
     window.__dshThemeSettings = {

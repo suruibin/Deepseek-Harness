@@ -42,7 +42,7 @@ export function ambientDecorScript(): string {
     }
     const state = {
       spotlight: read(KEYS.spotlight, true) !== false,
-      press: read(KEYS.press, true) !== false,
+      press: read(KEYS.press, false) !== false,
     }
     const isDark = () => document.body.hasAttribute('data-ds-dark-theme')
 
@@ -56,8 +56,10 @@ export function ambientDecorScript(): string {
       'html[data-dsh-hover-spotlight] [data-dsh-aqua-spot][data-spot-on] [data-dsh-aqua-glow]{opacity:1}',
       // 融合的输入框+统计行 spot 是隐形包装,辉光用卡片 24px 圆角。
       'html[data-dsh-hover-spotlight] [data-dsh-inputbar][data-dsh-aqua-spot] [data-dsh-aqua-glow]{border-radius:24px}',
-      // 下压:JS 写 perspective+rotate 内联,过渡让按入/回弹都顺滑。
-      'html[data-dsh-hover-press] [data-dsh-aqua-spot]{transition:transform 0.1s ease-out}',
+      // 下压:JS 写 perspective+rotate 内联。无 transition——瞬时应用:
+      // transform 过渡动画期间 backdrop-filter 逐帧重采样是闪烁根因
+      // (硬件 GL 下 blur 真实生效后),瞬时变换只重采样 1 次,无动画期。
+      'html[data-dsh-hover-press] [data-dsh-aqua-spot]{transition:none}',
     ].join('')
     let cssEl = document.getElementById('dsh-ambient-css')
     if (cssEl === null) {
@@ -203,6 +205,7 @@ export function ambientDecorScript(): string {
       let session = null
       let raf = 0
       let refreshRaf = 0
+      let pressTimer = 0
       const tilted = new WeakSet()
       const settle = new Map()
       const easeBack = (spot) => {
@@ -222,8 +225,10 @@ export function ambientDecorScript(): string {
           current = null
           session = null
         }
+        if (pressTimer !== 0) { clearTimeout(pressTimer); pressTimer = 0 }
         const glow = spot.querySelector(':scope > [data-dsh-aqua-glow]')
-        if (glow !== null) glow.style.removeProperty('background-image')
+        // 固定渐变保留(measure 会在 bg 空时重设);只清 transform 让光斑回位。
+        if (glow !== null) glow.style.removeProperty('transform')
         easeBack(spot)
       }
       const measure = (spot) => {
@@ -231,10 +236,18 @@ export function ambientDecorScript(): string {
         const local = glassLocalRect(spot)
         const glow = glowGated() ? ensureGlow(spot) : null
         if (glow !== null) {
-          glow.style.left = local.left + 'px'
-          glow.style.top = local.top + 'px'
-          glow.style.width = local.width + 'px'
-          glow.style.height = local.height + 'px'
+          // 光斑层覆盖 spot 视觉矩形 + 光斑半径边距(几何只设一次, 之后仅
+          // transform 移动光斑——合成器动画, 零重绘, 不触发 backdrop 重采样)
+          glow.style.left = (local.left - GLOW_RADIUS) + 'px'
+          glow.style.top = (local.top - GLOW_RADIUS) + 'px'
+          glow.style.width = (local.width + GLOW_RADIUS * 2) + 'px'
+          glow.style.height = (local.height + GLOW_RADIUS * 2) + 'px'
+          // 渐变是固定 50% 50% 的一次性设置,但可能被 clearSpot/关辉光清掉,
+          // 所以每次 measure 发现 bg 为空就重设,避免光斑永久丢失。
+          if (glow.dataset.glowCenter === undefined || glow.style.backgroundImage === '') {
+            glow.dataset.glowCenter = '1'
+            glow.style.backgroundImage = 'radial-gradient(' + GLOW_RADIUS + 'px at 50% 50%, var(--dsh-aqua-spot-color, ' + GLOW_FALLBACK + '), transparent 70%)'
+          }
         }
         return { spot, visual, local, glow }
       }
@@ -256,18 +269,28 @@ export function ambientDecorScript(): string {
           }
           if (glow !== null) {
             if (glowGated()) {
-              glow.style.backgroundImage = 'radial-gradient(' + GLOW_RADIUS + 'px at ' + (clientX - visual.left) + 'px ' + (clientY - visual.top) + 'px, var(--dsh-aqua-spot-color, ' + GLOW_FALLBACK + '), transparent 70%)'
+              // 合成器 transform 移动光斑(光斑层中心=spot 中心, 渐变固定 50% 50%):
+              // 每帧只改 transform, GPU 合成, 零重绘, 不触发 backdrop 重采样。
+              glow.style.transform = 'translate(' + ((clientX - visual.left) - (local.left + local.width / 2)) + 'px, ' + ((clientY - visual.top) - (local.top + local.height / 2)) + 'px)'
             } else {
+              glow.style.transform = ''
               glow.style.removeProperty('background-image')
+              delete glow.dataset.glowCenter
             }
           }
           if (tiltGated() && tiltable(spot)) {
             const dx = Math.min(0.5, Math.max(-0.5, (clientX - visual.left) / visual.width - 0.5))
             const dy = Math.min(0.5, Math.max(-0.5, (clientY - visual.top) / visual.height - 0.5))
             const tiltMax = spot.hasAttribute('data-dsh-trajectory') ? TILT_MAX * 0.5 : TILT_MAX
-            spot.style.transformOrigin = (local.left + local.width / 2) + 'px ' + (local.top + local.height / 2) + 'px'
-            spot.style.transform = 'perspective(' + TILT_PERSPECTIVE + 'px) rotateX(' + (tiltMax * -2 * dy) + 'rad) rotateY(' + (tiltMax * 2 * dx) + 'rad) scale(1.01)'
-            tilted.add(spot)
+            // 停顿防抖:移动中不更新 transform(避免 blur 面板每帧重采样闪烁),
+            // 鼠标停顿 80ms 后才应用一次下压;移动期间保持上一个角度。
+            if (pressTimer !== 0) clearTimeout(pressTimer)
+            pressTimer = window.setTimeout(() => {
+              pressTimer = 0
+              spot.style.transformOrigin = (local.left + local.width / 2) + 'px ' + (local.top + local.height / 2) + 'px'
+              spot.style.transform = 'perspective(' + TILT_PERSPECTIVE + 'px) rotateX(' + (tiltMax * -2 * dy) + 'rad) rotateY(' + (tiltMax * 2 * dx) + 'rad) scale(1.01)'
+              tilted.add(spot)
+            })
           } else if (tilted.has(spot)) {
             easeBack(spot)
           }
@@ -340,6 +363,7 @@ export function ambientDecorScript(): string {
         document.removeEventListener('pointerover', onOver)
         document.removeEventListener('pointerout', onOut)
         keeper()
+        if (pressTimer !== 0) { clearTimeout(pressTimer); pressTimer = 0 }
         if (raf !== 0) cancelAnimationFrame(raf)
         if (refreshRaf !== 0) cancelAnimationFrame(refreshRaf)
         for (const id of settle.values()) clearTimeout(id)

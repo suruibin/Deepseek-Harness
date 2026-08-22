@@ -30,12 +30,12 @@ mac:
 linux:
   icon: build/icon.png
   category: Development
-  # Artifact file name (AppImage + tar.gz); user wants the compiled artifact
-  # named DeepSeek.AppImage (no version in the file name).
+  # Artifact file name; user wants the compiled artifact named DeepSeek.AppImage
+  # (no version in the file name). tar.gz removed: single-threaded gzip of the
+  # 122MB payload made `npm run dist` take ~2min; AppImage alone builds in ~7s.
   artifactName: DeepSeek.${ext}
   target:
     - AppImage
-    - tar.gz
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
