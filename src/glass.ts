@@ -452,10 +452,22 @@ export function ambientStyleScript(): string {
       // sidebar/center cards. Its glass follows the SIDEBAR slider (per
       // user preference), so it stays visible even when the main-surface
       // slider is low.
+      // NOTE: glass goes on a ::before overlay, NOT on the header itself —
+      // backdrop-filter makes the element a containing block for fixed
+      // descendants, which re-anchored the Session log floating button
+      // (position:fixed, JS-set left) from the viewport into the header and
+      // shifted it under the composer stats row (unclickable).
+      // NOTE 2: the header rides INSIDE the center column, whose own ::before
+      // frosts the whole column (single blur + saturate(150%)). The header's
+      // ::before therefore carries NO backdrop-filter — it would stack a
+      // second pass and make the card deeper than the sidebar (用户: 都改成
+      // 1次模糊). It keeps only its translucent fill (the SIDEBAR slider); the
+      // column's single pass is exactly the header's single pass, so the
+      // header, the sidebar and the center all read as one 1×blur +
+      // saturate(150%) glass family.
       '[class*=\"_centerCol\"] header {',
-      '  background: var(--dsh-glass-sidebar-bg, rgba(15,17,23,0.35)) !important;',
-      '  backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important;',
-      '  -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important;',
+      '  position: relative !important;',
+      '  background: transparent !important;',
       '  border-radius: 14px !important;',
       '  margin: 6px 10px 0 !important;',
       // NOTE: no overflow:hidden here — it clipped the 后台任务 jobs menu
@@ -463,6 +475,17 @@ export function ambientStyleScript(): string {
       // past the header's box; the header::after hairline that overflow used
       // to clip is already display:none below, and background follows
       // border-radius on its own, so nothing regresses visually.
+      '}',
+      '[class*=\"_centerCol\"] header::before {',
+      '  content: \"\" !important;',
+      '  position: absolute !important;',
+      '  inset: 0 !important;',
+      '  border-radius: inherit !important;',
+      '  pointer-events: none !important;',
+      '  z-index: -1 !important;',
+      '  background: var(--dsh-glass-sidebar-bg, rgba(15,17,23,0.35)) !important;',
+      // NO backdrop-filter here: the center column's ::before is the header's
+      // single 1×blur + saturate(150%) pass (see NOTE 2 above).
       '}',
       // The SPA paints a 1px white hairline (header::after) along the bottom
       // edge — with the floating glass card it reads as a stray bright line.
@@ -661,6 +684,13 @@ export function ambientStyleScript(): string {
       // (margin-left:auto absorbs the free space; flex:0 0 auto overrides the
       // SPA's inline flex:1 so the cap actually holds).
       '[class*=\"VOzbGW_options\"] select { max-width: 200px !important; flex: 0 0 auto !important; margin-left: auto !important; }',
+      // 设置面板全屏遮罩(VOzbGW_mask)渐显:DSH 原生写的是 transition:all(无
+      // 时长=0s),遮罩一帧内全屏出现/消失,点设置时表现为整屏闪暗/闪亮。打开
+      // 侧补 0.18s fade-in;关闭侧 DOM 直接移除,CSS 过渡无从谈起,由下方
+      // maskFadeKeeper 在移除同帧追加渐隐替身层补 fade-out。
+      '@keyframes dshMaskIn { from { opacity: 0 } to { opacity: 1 } }',
+      '@keyframes dshMaskOut { from { opacity: 1 } to { opacity: 0 } }',
+      '[class*=\"VOzbGW_mask\"] { animation: dshMaskIn 0.18s ease-out !important; }',
       // Scroll-to-bottom floating button (回到底部, Md3f7G_toBottom, rides
       // inside the sticky Md3f7G_toBottomSlot): DSH paints it with
       // --dsw-alias-button-floating-fill (rgb(32,38,52), too dark on the
@@ -699,7 +729,7 @@ export function ambientStyleScript(): string {
       // (text included) every frame — the "whole interface flickers" bug.
       // On the pseudo-element the sampled layer is separate from the content
       // layer, so ambient animation never repaints the messages.
-      '[class*=\"_centerCol\"]::before { content: \"\" !important; position: absolute !important; inset: 0 !important; border-radius: inherit !important; pointer-events: none !important; z-index: -1 !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      '[class*=\"_centerCol\"]::before { content: \"\" !important; position: absolute !important; inset: 0 !important; border-radius: inherit !important; pointer-events: none !important; z-index: -1 !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(150%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(150%) !important; }',
       // The center column's inner root (wSkVaW_root) keeps the SPA's own
       // rgba(15,17,23,0.224) fill, stacking ANOTHER translucent layer on top
       // of the --dsh-glass-main-bg on the column — so at low main-surface
@@ -715,7 +745,16 @@ export function ambientStyleScript(): string {
       // line is always visible.
       '[class*=\"FJxK0a_root\"] { white-space: normal !important; overflow: visible !important; height: auto !important; }',
       '[class*=\"uV2eYG_root\"] { height: auto !important; min-height: 94px !important; }',
-      '[class*=\"_sidebarCol\"]::before { content: \"\" !important; position: absolute !important; inset: 0 !important; border-radius: inherit !important; pointer-events: none !important; z-index: -1 !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; }',
+      // The sidebar's ::before rides the SAME single-pass frosted backdrop as
+      // the center column (and the 对话/轨迹 header card on top of it): one
+      // blur + saturate(150%). One pass keeps the sidebar exactly as deep as
+      // the header — the header's single pass comes from the center column's
+      // ::before, and the sidebar lists the same single blur+saturate(150%)
+      // so all three regions read as one glass family (用户: 都改成1次模糊, 饱和
+      // 度150%). (The saturate was dropped earlier because at OPAQUE navy
+      // alpha it boosted the blue channel; over the wallpaper it just
+      // saturates the texture, and 150% is the chosen depth.)
+      '[class*=\"_sidebarCol\"]::before { content: \"\" !important; position: absolute !important; inset: 0 !important; border-radius: inherit !important; pointer-events: none !important; z-index: -1 !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(150%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(150%) !important; }',
       // Hosted settings panel (VOzbGW_panel, tagged data-dsh-settings-panel by
       // themeSettingsScript): DSH paints it with an OPAQUE blue-gray
       // (rgb(32,38,52)). Give the SETTINGS surface its own frosted glass,
@@ -768,21 +807,31 @@ export function ambientStyleScript(): string {
     const brandGradId = (idx) => (idx === 0 ? 'dsh-logo-grad' : 'dsh-logo-grad-name')
     // Repoint every brand letter path at the gradient. rc.8 has two flavors:
     // the "DeepSeek" letters use fill="currentColor", while the "HARNESS"
-    // badge letters (inside g[clip-path*="badge"]) use the inverted label
-    // variable. Both must be repointed so the whole wordmark cycles colors.
-    // The HARNESS badge backdrop rect (fill="currentColor", renders white)
-    // gets the same gradient at ~28% opacity so the badge reads as a tinted
-    // pill instead of a white box, and the letters stay clearly legible.
+    // badge letters (inside g[clip-path*="badge"]) get the INVERTED high-
+    // contrast treatment: white letters on a COLOR-CYCLING dark pill. The
+    // original design tinted the badge with the same gradient at 28% opacity
+    // and gave the letters the same gradient — at this 14px size the letters
+    // had almost no contrast against the tinted pill (luminance 44–58, edge
+    // energy 0.45) and read as a smudged slab (user: HARNESS 显示不清晰).
+    // The badge now fills with the SAME cycling gradient as DeepSeek at full
+    // opacity, dimmed by a CSS brightness(0.45) filter so the gradient still
+    // changes color with the brand cycle while the white letters stay crisp
+    // on every stop (luminance 52–255, edge energy 34, verified by A/B) —
+    // user: HARNESS 背景可以变色 看看效果.
     const repointLetterFills = (svg, gradId) => {
       svg.querySelectorAll('path[fill="currentColor"]').forEach((p) => {
         p.setAttribute('fill', 'url(#' + gradId + ')')
       })
+      // HARNESS badge letters: SOLID WHITE (see comment above).
       svg.querySelectorAll('g[clip-path*="badge"] path').forEach((p) => {
-        p.setAttribute('fill', 'url(#' + gradId + ')')
+        p.setAttribute('fill', '#ffffff')
       })
+      // HARNESS badge backdrop: the cycling gradient at full opacity, dimmed
+      // with brightness(0.45) — half the contrast fix (see comment above).
       svg.querySelectorAll('rect[fill="currentColor"]').forEach((r) => {
         r.setAttribute('fill', 'url(#' + gradId + ')')
-        r.setAttribute('fill-opacity', '0.28')
+        r.setAttribute('fill-opacity', '1')
+        r.style.filter = 'brightness(0.45)'
       })
     }
     const ensureLogoStructure = () => {
@@ -965,8 +1014,27 @@ export function ambientStyleScript(): string {
       })
     }
     let obsScheduled = false
+    // 设置遮罩渐隐 keeper:mask 关闭时 DSH 直接移除 DOM(observer 微任务 →
+    // rAF 都在下一帧渲染前跑),在移除后的首帧渲染前追加一个渐隐替身层,
+    // 视觉上遮罩平滑淡出而非瞬间消失(整屏闪亮)。配合 CSS 侧 dshMaskIn,
+    // 遮罩开关两个方向都有 0.18s 过渡。
+    let lastMaskSeen = document.querySelector('[class*="VOzbGW_mask"]') !== null
+    const maskFadeKeeper = () => {
+      const mask = document.querySelector('[class*="VOzbGW_mask"]')
+      if (mask !== null) { lastMaskSeen = true; return }
+      if (!lastMaskSeen) return
+      lastMaskSeen = false
+      const ghost = document.createElement('div')
+      ghost.setAttribute('data-dsh-mask-fade', '')
+      ghost.setAttribute('aria-hidden', 'true')
+      ghost.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);pointer-events:none;z-index:9990;animation:dshMaskOut 0.18s ease-out forwards'
+      document.body.appendChild(ghost)
+      ghost.addEventListener('animationend', () => ghost.remove())
+      setTimeout(() => ghost.remove(), 600)
+    }
     const obsTick = () => {
       obsScheduled = false
+      maskFadeKeeper()
       if (!document.head.contains(style)) {
         if (document.querySelector('#dsh-dt-style') === null) document.head.appendChild(style)
       }
@@ -1024,11 +1092,58 @@ export function ambientStyleScript(): string {
     // column's bottom (terminal dock open, window resize). React re-renders
     // put the seat back into the scroll body; obsTick (rAF-throttled) moves
     // it again, and the same pass re-pins the scroll height.
+    // 会话切换时 React 找不到被挪走的 seat,会在 scroll 里重建一个新节点,
+    // 旧节点成为孤儿(带钉底内联样式叠在页面底部,双输入框)——每帧先清
+    // 僵尸。空会话(无消息)DSH 原生是输入框垂直居中的欢迎布局,钉底反而
+    // 错(大片空白+输入框沉底):无内容时解钉,还原原生布局。
     const keepComposerFloating = () => {
       const center = document.querySelector('[class*="_centerCol"]')
-      const seat = document.querySelector('[class*="wSkVaW_composerSeat"]')
       const scroll = document.querySelector('[class*="_centerCol"] [class*="_scrollBody"], [class*="_centerCol"] [class*="_scroll"]')
-      if (center === null || seat === null || scroll === null) return
+      if (center === null || scroll === null) return
+      // 僵尸清理:seat 原生只住在 scroll 里。React 会话切换时在 scroll 重建
+      // 新 seat,我们此前挪出去的旧节点成为孤儿——仅当 scroll 里确有原生
+      // seat 时才删外面的孤儿(单节点在别处=正常钉底态,不能删)。
+      const seats = document.querySelectorAll('[class*="wSkVaW_composerSeat"]')
+      let seat = null
+      for (const s of seats) if (s.parentElement === scroll) seat = s
+      if (seats.length > 1 && seat !== null) {
+        for (const s of seats) if (s.parentElement !== scroll) s.remove()
+      }
+      if (seat === null) seat = document.querySelector('[class*="wSkVaW_composerSeat"]')
+      if (seat === null) return
+      // 空会话检测:scroll 内除 seat 外无内容 → 原生居中布局。
+      // 消息容器是 display:contents(无盒高),高度检测恒 0——改用
+      // "有高度或有文本"判定:消息会话文本量大,空会话该容器无文本。
+      const hasContent = [...scroll.children].some((c) =>
+        c !== seat && (c.getBoundingClientRect().height > 4 || (c.textContent || '').trim().length > 0))
+      if (!hasContent) {
+        // 设置浮层打开时空会话欢迎界面隐藏:模态遮罩是半透明的,
+        // 底下透出居中输入框与设置面板叠在一起,视觉混乱。
+        const dialogOpen = document.querySelector('[role="dialog"]') !== null
+        if (dialogOpen && seat.style.display !== 'none') seat.style.display = 'none'
+        if (!dialogOpen && seat.style.display === 'none') seat.style.display = ''
+        // 只在确有钉底残留时清理(避免每次 DOM 变化都强制回流)。
+        if (scroll.style.height !== '') {
+          scroll.style.removeProperty('flex')
+          scroll.style.removeProperty('height')
+          scroll.style.removeProperty('min-height')
+        }
+        if (seat.style.position !== '') {
+          if (seat.parentElement !== scroll) {
+            seat.parentElement.removeChild(seat)
+            scroll.appendChild(seat)
+          }
+          seat.style.removeProperty('position')
+          seat.style.removeProperty('left')
+          seat.style.removeProperty('right')
+          seat.style.removeProperty('bottom')
+          seat.style.removeProperty('margin')
+          seat.style.removeProperty('z-index')
+        }
+        return
+      }
+      // 有内容(消息会话):确保 welcome 隐藏态被还原(切会话残留)。
+      if (seat.style.display === 'none') seat.style.display = ''
       if (seat.parentElement !== center) center.appendChild(seat)
       seat.style.position = 'absolute'
       seat.style.left = '0'
@@ -2771,6 +2886,15 @@ export function wallpaperLayerScript(): string {
       window.__dshWallpaperObserver.disconnect()
       window.__dshWallpaperObserver = undefined
     }
+    // Built-in frosted backdrop when no user wallpaper is set: backdrop-filter
+    // can only blur content painted inside the page (not the OS desktop behind
+    // the transparent window), so without a wallpaper the popups/main glass had
+    // nothing to frost and showed the raw desktop through. A FLAT pastel tone
+    // (no gradient) keeps every screen position the same color, so the sidebar
+    // and the top header card always read identically — a multi-stop gradient
+    // made the left (sidebar) and center (header) sample different colors and
+    // the top looked deeper (user: 顶部的颜色更深).
+    window.__dshBuiltinWallpaper = 'linear-gradient(0deg, #9aa1af 0%, #9aa1af 100%)'
     const ensure = () => {
       let el = document.getElementById('dsh-dt-wallpaper')
       if (el === null) {
@@ -2782,7 +2906,7 @@ export function wallpaperLayerScript(): string {
         document.body.prepend(el)
       }
       const url = window.__dshWallpaperUrl
-      el.style.backgroundImage = url ? 'url("' + url + '")' : 'none'
+      el.style.backgroundImage = url ? 'url("' + url + '")' : window.__dshBuiltinWallpaper
     }
     ensure()
     let pending = false
@@ -2798,6 +2922,9 @@ export function wallpaperLayerScript(): string {
       const r = res
       window.__dshWallpaperUrl = (r !== null && typeof r === 'object' && typeof r.url === 'string') ? r.url : null
       ensure()
+      // The sidebar glass floor keys off the wallpaper presence; notify any
+      // listener (glassControlsScript) so the CSS variables re-apply.
+      window.dispatchEvent(new CustomEvent('dsh-wallpaper-changed'))
     }).catch(() => {})
   })()`
 }
@@ -2869,7 +2996,9 @@ export function wallpaperControlScript(): string {
           window.__dshWallpaperUrl = url
           nameEl.textContent = file === null ? '' : file
           const layer = document.getElementById('dsh-dt-wallpaper')
-          if (layer !== null) layer.style.backgroundImage = url ? 'url("' + url + '")' : 'none'
+          if (layer !== null) layer.style.backgroundImage = url ? 'url("' + url + '")' : (window.__dshBuiltinWallpaper || 'none')
+          // Sidebar glass floor follows wallpaper presence; re-apply variables.
+          window.dispatchEvent(new CustomEvent('dsh-wallpaper-changed'))
           if (typeof srcPath === 'string' && srcPath !== '') {
             try { localStorage.setItem('dsh-desktop-wallpaper-src', srcPath) } catch {}
             grid.querySelectorAll('.dsh-wp-cell').forEach((cell) => {
@@ -3239,7 +3368,7 @@ export function glassControlsScript(): string {
       { key: 'settings', min: 0, max: 100, def: 5, unit: '%' },
       { key: 'input', min: 0, max: 100, def: 30, unit: '%' },
       { key: 'sidebar', min: 0, max: 100, def: 5, unit: '%' },
-      { key: 'popup', min: 5, max: 100, def: 40, unit: '%' },
+      { key: 'popup', min: 5, max: 100, def: 7, unit: '%' },
     ]
     const values = Object.fromEntries(SLIDERS.map((s) =>
       [s.key, Math.max(s.min, Math.min(s.max, read('dsh-desktop-glass-' + s.key, s.def)))]))
@@ -3255,6 +3384,12 @@ export function glassControlsScript(): string {
       }
       const a = (v) => 'rgba(15,17,23,' + (v / 100).toFixed(3) + ')'
       const b = (v) => 'rgba(39,46,62,' + (v / 100).toFixed(3) + ')'
+      // The sidebar follows its own 侧边栏 slider exactly — NO wallpaper floor —
+      // so at the same slider value it renders identically to the 对话/轨迹 header
+      // card, which shares the same --dsh-glass-sidebar-bg variable. The old
+      // 12% floor over a wallpaper made the sidebar read ~10 levels darker than
+      // the header card and shifted it off the wallpaper (user: 跟顶部的一样).
+      const sidebarBg = a(values.sidebar)
       // Hardware GL (use-angle=gl, see main.ts) renders full-window
       // backdrop-filters cheaply (~20% GPU process vs 660% under SwiftShader),
       // so the big panes get real frosted blur again, driven by mainblur.
@@ -3264,7 +3399,7 @@ export function glassControlsScript(): string {
         '--dsh-glass-settings-bg: ' + a(values.settings) + '; ' +
         '--dsh-glass-settings-blur: ' + values.mainblur + 'px; ' +
         '--dsh-glass-input-bg: ' + b(values.input) + '; ' +
-        '--dsh-glass-sidebar-bg: ' + a(values.sidebar) + '; ' +
+        '--dsh-glass-sidebar-bg: ' + sidebarBg + '; ' +
         '--dsh-glass-popup-bg: ' + b(values.popup) + '; ' +
         '--dsh-glass-popup-blur: ' + values.popupblur + 'px; ' +
       '}'
@@ -3356,6 +3491,14 @@ export function glassControlsScript(): string {
       holder.appendChild(control)
     }
     applyVars() // apply persisted values on every injection, panel open or not
+    // The sidebar dark floor depends on whether a user wallpaper is set; the
+    // wallpaper resolves/loads asynchronously and can change at runtime, so
+    // re-apply the variables whenever it does (hook installed once; this
+    // script is re-injected on every page load).
+    if (window.__dshGlassWpHook === undefined) {
+      window.__dshGlassWpHook = true
+      window.addEventListener('dsh-wallpaper-changed', () => applyVars())
+    }
     mount()
     // 主题设置 → 背景壁纸: move that section to the very top of the theme
     // options (user request). The six sections live in a flex container, so
@@ -3574,14 +3717,11 @@ export function themeSettingsScript(): string {
       wallpaperSlot.dataset.dshThemeWallpaperSlot = 'true'
       const featureSlot = document.createElement('div')
       featureSlot.dataset.dshThemeFeatureSlot = 'true'
-      const hoverSlot = document.createElement('div')
-      hoverSlot.dataset.dshThemeHoverSlot = 'true'
       controls.appendChild(glassSlot)
       controls.appendChild(cycleSlot)
       controls.appendChild(alphaSlot)
       controls.appendChild(wallpaperSlot)
       controls.appendChild(featureSlot)
-      controls.appendChild(hoverSlot)
       group.appendChild(controls)
       panel.appendChild(group)
       options.appendChild(panel)

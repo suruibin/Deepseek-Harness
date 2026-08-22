@@ -15,7 +15,6 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nati
 // not break the shell. The embedded terminal feature degrades gracefully.
 const require_ = createRequire(import.meta.url)
 import { alphaControlScript, ambientStyleScript, featureControlScript, glassControlsScript, glassGuardScript, glassWindowOptions, inputHistoryScript, loadGlassSettings, saveGlassSettings, terminalScript, themeScript, themeSettingsScript, wallpaperControlScript, wallpaperLayerScript, whaleSprayScript, type GlassTheme } from './glass.ts'
-import { ambientDecorScript } from './ambient.ts'
 import { gitStatus } from './git-status.ts'
 import { detectExistingServer, resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
 import { mergePlugins, pluginsCssScript, readPluginDir } from './plugins.ts'
@@ -351,8 +350,7 @@ function createWindow(url: URL): void {
     if (glassTimer !== undefined) clearTimeout(glassTimer)
     glassTimer = setTimeout(() => {
       void applyGlass(window)
-      // Injection order matters: ambientStyle must precede ambientDecor (its
-      // rules win on ties), and everything must follow applyGlass's theme.
+      // Injection order matters: everything must follow applyGlass's theme.
       for (const script of [
         themeSettingsScript,
         alphaControlScript,
@@ -360,7 +358,6 @@ function createWindow(url: URL): void {
         featureControlScript,
         glassControlsScript,
         ambientStyleScript,
-        ambientDecorScript,
         inputHistoryScript,
         whaleSprayScript,
       ]) {
