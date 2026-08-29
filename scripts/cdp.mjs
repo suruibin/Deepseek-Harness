@@ -15,9 +15,10 @@
  */
 const [cmd, ...args] = process.argv.slice(2)
 
-const targets = await fetch('http://127.0.0.1:9222/json').then((r) => r.json())
+const CDP_PORT = process.env.DSH_CDP_PORT ?? '9333'
+const targets = await fetch(`http://127.0.0.1:${CDP_PORT}/json`).then((r) => r.json())
 const page = targets.find((t) => t.type === 'page')
-if (!page) { console.error('no page target on :9222'); process.exit(1) }
+if (!page) { console.error(`no page target on :${CDP_PORT}`); process.exit(1) }
 
 const ws = new WebSocket(page.webSocketDebuggerUrl)
 let id = 0
@@ -107,6 +108,34 @@ ys, xs = np.where((np.abs(a - b).sum(axis=2)) > 25)
 print(len(xs))
 `, aFile, bFile]).toString().trim()
         console.log(`blur diff: ${out} px`)
+        break
+      }
+      case 'classes': {
+        // Dump every CSS class currently in the page, with element count and a
+        // size sample, so UI debugging never has to guess hashed class names.
+        // usage: node scripts/cdp.mjs classes [filter]
+        //   filter  optional substring — only classes containing it are printed
+        const filter = args.join(' ').trim()
+        const cond = filter === '' ? `true` : `c.includes(${JSON.stringify(filter)})`
+        const expr = `(() => {
+          const counts = new Map()
+          const widths = new Map()
+          for (const el of document.querySelectorAll('*')) {
+            const cls = el.className && typeof el.className === 'string' ? el.className.split(/\\s+/) : []
+            for (const c of cls) {
+              if (!c) continue
+              counts.set(c, (counts.get(c) || 0) + 1)
+              if (!widths.has(c)) widths.set(c, Math.round(el.getBoundingClientRect().width))
+            }
+          }
+          const rows = [...counts.entries()]
+            .filter(([c]) => CONDITION)
+            .sort((a, b) => b[1] - a[1])
+            .map(([c, n]) => c + '\\t' + n + '\\t' + widths.get(c))
+          return rows.join('\\n')
+        })()`.replace('CONDITION', cond)
+        const r = await ev(expr)
+        console.log(r)
         break
       }
       default:

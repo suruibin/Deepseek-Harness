@@ -14,12 +14,14 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nati
 // node-pty is a native module; loaded lazily so a missing/broken build does
 // not break the shell. The embedded terminal feature degrades gracefully.
 const require_ = createRequire(import.meta.url)
-import { alphaControlScript, ambientStyleScript, featureControlScript, glassControlsScript, glassGuardScript, glassWindowOptions, inputHistoryScript, loadGlassSettings, saveGlassSettings, terminalScript, themeScript, themeSettingsScript, wallpaperControlScript, wallpaperLayerScript, whaleSprayScript, type GlassTheme } from './glass.ts'
+import { alphaControlScript, ambientStyleScript, featureControlScript, glassControlsScript, glassGuardScript, glassWindowOptions, inputHistoryScript, loadGlassSettings, saveGlassSettings, streamingGuardScript, terminalScript, themeScript, themeSettingsScript, wallpaperControlScript, wallpaperLayerScript, whaleSprayScript, type GlassTheme } from './glass.ts'
 import { gitStatus } from './git-status.ts'
-import { detectExistingServer, resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
+import { detectExistingServer, pidOnPort, processCmdline, processCwd, resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
 import { mergePlugins, pluginsCssScript, readPluginDir } from './plugins.ts'
 import { PtyRegistry } from './pty-registry.ts'
 import { repairSessionLogs } from './session-repair.ts'
+import { registerSessionManageIpc } from './session-manage.ts'
+import { sessionManageScript } from './session-manage-client.ts'
 import { removeStoredWallpaper, storeWallpaper, wallpaperDataUrl } from './wallpaper.ts'
 
 const APP_ID = 'ai.deepseek.dsh-desktop'
@@ -360,6 +362,8 @@ function createWindow(url: URL): void {
         ambientStyleScript,
         inputHistoryScript,
         whaleSprayScript,
+        streamingGuardScript,
+        sessionManageScript,
       ]) {
         void inject(window, script)
       }
@@ -481,6 +485,39 @@ function runDir(): string {
   return app.isPackaged ? join(process.resourcesPath, 'app.asar.unpacked') : PACKAGE_DIR
 }
 
+/**
+ * Spawn the orphan reaper for a server child: no OS delivers a parent-death
+ * notification, so the reaper polls this process and tree-kills the server if
+ * the main is ever hard-killed (Task Manager, taskkill, a crash), so `dsh web`
+ * cannot outlive its window on any platform. Windows kills via taskkill /T;
+ * POSIX signals the server's process group (the server is detached, so a
+ * negated PID reaches the whole tree). The reaper stays alive across a graceful
+ * quit too: it detects the main's exit and finishes the cleanup even if the
+ * quit path's own killTree races the exit. It is deliberately not killed on
+ * quit. Like the server, it must live outside Electron's process group: a
+ * terminal Ctrl+C signals the group, and taking the reaper with it would kill
+ * the hard-kill cleanup exactly when it is needed (detached + unref below).
+ * @param serverPid - the server child's process id (0 when it failed to spawn).
+ */
+function spawnReaper(serverPid: number): void {
+  spawn(process.execPath, [join(runDir(), 'lib', 'reaper.js'), String(process.pid), String(serverPid)], {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    stdio: 'ignore',
+    windowsHide: true,
+    // Detached gives the reaper its own process group on POSIX (immune to the
+    // group SIGINT that takes Electron) and a console-less independent process
+    // on Windows; there taskkill /T is group-agnostic, so it still reaches the
+    // reaper's targets. unref() drops the parent's handle so Electron can exit
+    // without waiting — the reaper's job is to outlive it, not hold it open.
+    detached: true,
+  })
+    // The reaper is best-effort: if it cannot start, the graceful quit path
+    // still tree-kills the server; only hard-kill cleanup is lost.
+    .on('error', () => {})
+    // Unref after the error handler, which returns the child itself.
+    .unref()
+}
+
 async function boot(): Promise<void> {
   const launch = resolveWebLaunch({ env: process.env })
   // 启动 dsh web 前自动检测并修复损坏的会话日志 (seq 缺口 / 多写流交错),
@@ -563,22 +600,7 @@ async function boot(): Promise<void> {
   // must live outside Electron's process group: a terminal Ctrl+C signals the
   // group, and taking the reaper with it would kill the hard-kill cleanup
   // exactly when it is needed (detached + unref below).
-  spawn(process.execPath, [join(runDir(), 'lib', 'reaper.js'), String(process.pid), String(child.pid ?? 0)], {
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-    stdio: 'ignore',
-    windowsHide: true,
-    // Detached gives the reaper its own process group on POSIX (immune to the
-    // group SIGINT that takes Electron) and a console-less independent process
-    // on Windows; there taskkill /T is group-agnostic, so it still reaches the
-    // reaper's targets. unref() drops the parent's handle so Electron can exit
-    // without waiting — the reaper's job is to outlive it, not hold it open.
-    detached: true,
-  })
-    // The reaper is best-effort: if it cannot start, the graceful quit path
-    // still tree-kills the server; only hard-kill cleanup is lost.
-    .on('error', () => {})
-    // Unref after the error handler, which returns the child itself.
-    .unref()
+  spawnReaper(child.pid ?? 0)
   // Readable stream: yield strings, and a multibyte character split across
   // chunks is reassembled by the decoder instead of mojibaked.
   child.stdout.setEncoding('utf8')
@@ -616,6 +638,129 @@ async function boot(): Promise<void> {
     showWindow()
   }
   await exposeLifecycleTestControl()
+}
+
+/**
+ * Kill a non-group-leader process (an externally-spawned reused server) by its
+ * positive pid: SIGTERM, escalated to SIGKILL after a grace period. The
+ * external dsh web is spawned by a terminal session — not detached — so
+ * `killProcessTree`'s negated process-group signal cannot reach it (its pid is
+ * not a process-group id). Resolves once the pid no longer exists.
+ * @param pid - the process to terminate.
+ */
+function killProcessDirect(pid: number): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      process.kill(pid, 'SIGTERM')
+    } catch {
+      // Already gone.
+      resolve()
+      return
+    }
+    const deadline = Date.now() + 8_000
+    const poll = (): void => {
+      try {
+        process.kill(pid, 0)
+      } catch {
+        resolve()
+        return
+      }
+      if (Date.now() >= deadline) {
+        try { process.kill(pid, 'SIGKILL') } catch { /* gone */ }
+        resolve()
+        return
+      }
+      setTimeout(poll, 100)
+    }
+    setTimeout(poll, 100)
+  })
+}
+
+/**
+ * Restart the dsh web server in place (driven by the archived panel's
+ * 「重启 dsh」 button). The host keeps its workspace registry in memory and
+ * re-reads workspace.json only at startup, so the shell's unarchive/restore
+ * ledger edits take effect in the official sidebar only after such a restart.
+ *
+ * Handles both server ownership modes:
+ *  - shell-owned child: kill it with `killTree` (detached process group) and
+ *    respawn via `resolveWebLaunch` (the same launch the boot used);
+ *  - externally-spawned reused server: locate it on the current URL's port,
+ *    replicate its original argv (preserves `--trusted-host` etc.) and cwd
+ *    from /proc, then kill it directly.
+ * The hosted window reloads to the new URL so the injected scripts re-run.
+ * @returns the new URL on success, or an error message.
+ */
+async function restartWebServer(): Promise<{ ok: true; url: string } | { ok: false; message: string }> {
+  const target = serverUrl ?? new URL('http://127.0.0.1:3080/')
+  const port = Number(target.port) || 3080
+  const owned = server !== undefined && !childExited(server)
+  const killPid = owned ? server?.pid : await pidOnPort(port)
+  // Replicate the current server's launch (its original argv + cwd from /proc)
+  // so a restart preserves the listen port and custom flags (e.g.
+  // --trusted-host). Applies to both ownership modes; falls back to the
+  // shell's own launch resolution when /proc replication is unavailable.
+  let replicated: { command: string; args: string[]; cwd?: string; env?: Record<string, string> } | undefined
+  if (killPid !== undefined) {
+    const argv = await processCmdline(killPid)
+    const command = argv !== undefined ? argv[0] : undefined
+    if (argv !== undefined && command !== undefined) {
+      const cwd = await processCwd(killPid)
+      replicated = cwd !== undefined
+        ? { command, args: argv.slice(1), cwd }
+        : { command, args: argv.slice(1) }
+    }
+  }
+  if (killPid !== undefined) {
+    if (owned) await killTree(killPid)
+    else await killProcessDirect(killPid)
+  }
+  const launch = replicated ?? resolveWebLaunch({ env: process.env })
+  const child = spawn(launch.command, launch.args, {
+    cwd: launch.cwd,
+    env: { ...process.env, ...launch.env },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+    // POSIX: detaching makes the child a process-group leader so both killTree
+    // and the reaper can signal the whole tree with a negated PID; Windows
+    // stays attached and tree-kills with taskkill /T instead.
+    detached: process.platform !== 'win32',
+  })
+  server = child
+  let stderrTail = ''
+  child.stderr.on('data', (chunk: Buffer) => {
+    stderrTail = (stderrTail + chunk.toString()).slice(-STDERR_TAIL_LIMIT)
+  })
+  child.on('error', (error) => {
+    console.error(`[dsh-desktop] restart failed to spawn dsh web: ${error.message}`)
+  })
+  spawnReaper(child.pid ?? 0)
+  child.stdout.setEncoding('utf8')
+  let url: URL | undefined
+  try {
+    url = await waitForReadyLine(child.stdout, {
+      onChunk: (chunk) => { process.stdout.write(`[dsh web] ${chunk}`) },
+    })
+    await waitForHttpOk(url)
+    if (childExited(child)) {
+      throw new Error('restarted dsh web exited during verification')
+    }
+  } catch (error) {
+    const message = error instanceof Error ? `${error.message}\n${stderrTail}` : String(error)
+    console.error(`[dsh-desktop] restart failed: ${message}`)
+    return { ok: false, message: `重启 dsh 失败: ${message}` }
+  }
+  if (url === undefined) return { ok: false, message: '重启后未获得服务地址' }
+  serverUrl = url
+  // Reload the hosted window so the official sidebar re-reads the ledger and
+  // the injected scripts re-run (did-finish-load re-injects everything).
+  if (mainWindow !== undefined && !mainWindow.isDestroyed()) {
+    void mainWindow.loadURL(url.href).catch((error: unknown) => {
+      console.error(`[dsh-desktop] restart: failed to load ${url.href}: ${error instanceof Error ? error.message : String(error)}`)
+    })
+  }
+  console.log(`[dsh-desktop] dsh web restarted at ${url.href}`)
+  return { ok: true, url: url.href }
 }
 
 // Tray residency means the app outlives its window; a second launch must focus
@@ -940,6 +1085,11 @@ if (!app.requestSingleInstanceLock()) {
     clipboard.writeText(typeof text === 'string' ? text : '')
     return true
   })
+  // 会话删除 / 已归档 / 回收站 IPC（preload 桥 window.dshDesktop.session）。
+  registerSessionManageIpc()
+  // 重启 dsh web（已归档面板「重启 dsh」按钮）：宿主内存 registry 权威，取消归档/
+  // 恢复的账本改动需重启后官方侧栏才更新；该 handler 原地重启并重载窗口。
+  ipcMain.handle('dsh:web-restart', () => restartWebServer())
   app.whenReady().then(boot).catch(fatal)
   app.on('before-quit', (event) => {
     // More than one path can request quit. Keep the first tree-kill as the

@@ -107,6 +107,26 @@ const clipboard = {
   writeText: (text: string): Promise<boolean> => ipcRenderer.invoke('dsh:clipboard-write', text),
 }
 
+/** Session delete / archived / recycle-bin bridge (backed by main-process ~/.dsh storage edits). */
+const session = {
+  /** Delete a session: move its log dir to the recycle bin and drop it from the ledger. */
+  delete: (sessionId: string): Promise<unknown> => ipcRenderer.invoke('dsh:session-delete', sessionId),
+  /** Archived session list; resolves to { items } or { error }. */
+  archivedList: (): Promise<unknown> => ipcRenderer.invoke('dsh:session-archived-list'),
+  /** Unarchive a session (takes effect after restart); resolves to { ok, changed } or { error }. */
+  unarchive: (sessionId: string): Promise<unknown> => ipcRenderer.invoke('dsh:session-unarchive', sessionId),
+  /** Deleted (recycle bin) session list; resolves to { items } or { error }. */
+  trashList: (): Promise<unknown> => ipcRenderer.invoke('dsh:session-trash-list'),
+  /** Restore a session from the recycle bin; resolves to { ok } or { error }. */
+  trashRestore: (sessionId: string): Promise<unknown> => ipcRenderer.invoke('dsh:session-trash-restore', sessionId),
+  /** Permanently delete a session already in the recycle bin; resolves to { ok, removed } or { error }. */
+  trashDelete: (sessionId: string): Promise<unknown> => ipcRenderer.invoke('dsh:session-trash-delete', sessionId),
+  /** Empty the whole recycle bin; resolves to { ok, removed } or { error }. */
+  trashEmpty: (): Promise<unknown> => ipcRenderer.invoke('dsh:session-trash-empty'),
+  /** Restart the dsh web server in place; applies unarchive/restore to the official sidebar. Resolves to { ok, url } or { error }. */
+  restartWeb: (): Promise<unknown> => ipcRenderer.invoke('dsh:web-restart'),
+}
+
 contextBridge.exposeInMainWorld('dshDesktop', {
   /** Ask the main process to change the window glass tint (0..1). */
   setAlpha: (alpha: number): void => { ipcRenderer.send('dsh:set-alpha', alpha) },
@@ -126,4 +146,6 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   state,
   /** System clipboard bridge (terminal copy/paste). */
   clipboard,
+  /** Session delete / archived / recycle-bin bridge. */
+  session,
 })

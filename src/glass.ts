@@ -193,6 +193,13 @@ export function glassGuardScript(alpha: number): string {
     // around = body + underlay = two a-layers ≈ 0.398. The dock fill is the
     // per-layer alpha a; the underlay supplies the second layer.
     '--dsw-specific-panel-fill': `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`,
+    // Markdown / tool-call output code blocks: DSH fills them with an OPAQUE
+    // deep color (--dsw-alias-markdown-code-block / -banner), so the command+
+    // output frames read as solid black slabs. Repoint both to the same
+    // translucent glass tint as the other surfaces so they join the frosted
+    // family (they still blur through the center column's backdrop).
+    '--dsw-alias-markdown-code-block': `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`,
+    '--dsw-alias-markdown-code-block-banner': `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`,
   })
   return `(() => {
     if (window.__dshGlassGuardObserver) {
@@ -598,6 +605,13 @@ export function ambientStyleScript(): string {
       // than the 780px input card the user sees (user: 太窄了). Pin it to the
       // same 780px centered width so it aligns with the composer card.
       '[class*=\"_7yHdaG_dock\"] { width: 780px !important; max-width: calc(100% - 16px) !important; margin-left: auto !important; margin-right: auto !important; }',
+      // Task-list dock (任务清单, TodoPanel root lXshSW_root): renders above the
+      // composer while a task list is active. Its own rule caps the width at
+      // calc(card-max-width - 4*dock-inset), so it renders NARROWER than the
+      // 780px input card (user: 任务这个弹窗很窄 能不能跟输入框一样宽). Pin it to
+      // the same 780px centered width so it aligns with the composer card and
+      // the queued-message dock. The inner body/list already stretch to it.
+      '[class*=\"lXshSW_root\"] { width: 780px !important; max-width: calc(100% - 16px) !important; }',
       // Composer 命令 (+) 按钮: DSH 给它 --dsw-specific-selector (opaque
       // #353638 深灰圆点), 与同排的访问模式/模型/上下文透明按钮不协调。
       // 改为透明, 让图标直接浮在输入卡片的玻璃上; 悬停态同样去灰。
@@ -632,14 +646,26 @@ export function ambientStyleScript(): string {
       // slider runs 5..100 in 主题设置 → 界面毛玻璃 (default 7, mirroring the
       // sidebar's alpha; 100 = fully solid slab). The _sideTop_ class
       // is unique to the access-mode list (one match). The queued-message
-      // dock (插话发送, _7yHdaG_dock) that appears
-      // above the composer while the agent is running is another popup family
-      // member and follows the same rule; its inner _7yHdaG_panel paints
-      // --dsw-specific-tip (opaque gray), so both the dock shell and the
-      // visible panel get the popup glass. The context-usage popup (上下文
-      // 已用, JObwrW_panel) also rides the same variable via
+      // dock that appears above the composer while the agent is running is
+      // NOT part of this popup family — it is the queued-message dock
+      // (插话发送, _7yHdaG_dock) and gets the INPUT-card glass treatment
+      // below, so it reads as the same family as the composer card it sits
+      // above (its default popup-family alpha of 0.07 was nearly transparent
+      // and looked unfrosted, user: 背景没有磨砂效果). The context-usage popup
+      // (上下文已用, JObwrW_panel) rides the same variable via
       // --dsw-specific-menu and joins the family.
-      '[class*=\"_menu\"], [class*=\"_sideTop_\"], [class*=\"_7yHdaG_dock\"], [class*=\"_7yHdaG_panel\"], [class*=\"JObwrW_panel\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; }',
+      '[class*=\"_menu\"], [class*=\"_sideTop_\"], [class*=\"JObwrW_panel\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; }',
+      // Queued-message dock (插话发送, _7yHdaG_dock) sits ABOVE the composer
+      // card; give it the SAME input-card glass (input-bg + main blur) and the
+      // composer's 22px radius on ALL corners (the SPA paints the panel with
+      // --dsw-specific-tip opaque gray and a top-only 12px radius + a
+      // half-border ::after — user: 倒圆角没做好). Round all corners to match
+      // the composer card and kill the stray half-border; the frosted blur
+      // (which popup-family's near-transparent alpha dropped) makes the dock
+      // read as one glass surface with the card below it.
+      '[class*=\"_7yHdaG_dock\"] { background-color: transparent !important; }',
+      '[class*=\"_7yHdaG_panel\"] { background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%) !important; border-radius: 22px !important; }',
+      '[class*=\"_7yHdaG_panel\"]::after { display: none !important; }',
       // Sidebar session hover-preview card (CSS-modules class _card_<hash>_<n>)
       // paints an OPAQUE rgb(44,44,46) with no blur — a solid slab over the
       // glass. Scanned the page: the hover preview card is the only _card_
@@ -648,6 +674,14 @@ export function ambientStyleScript(): string {
       // popup slider default (user: 鼠标停留弹出的框没有模糊和透明 / 可以再透明点);
       // the wildcard keeps it working across web upgrades that re-hash the class.
       'body > [class*=\"_card_\"] { background-color: rgba(39,46,62,0.45) !important; backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; }',
+      // While the agent is answering, the center column repaints on every
+      // token; the sidebar hover-preview card's backdrop-filter (above)
+      // re-samples that moving backdrop each frame, and the compositor
+      // flashes a stale backdrop — the visible flicker right of the sidebar
+      // during streaming. streamingGuardScript flips html[data-dsh-streaming];
+      // while set, suspend the card's blur (the translucent tint stays) so it
+      // stops re-blurring. Idle hovers keep the full frosted look.
+      'html[data-dsh-streaming] body > [class*=\"_card_\"] { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }',
       // Settings-panel selector dropdowns (标准模式 / Full access / 语言 /
       // 排队发送 pickers): the shared portal-list component (CSS-modules
       // group _list_ / _submenu_) paints --dsw-specific-menu as an OPAQUE
@@ -761,15 +795,39 @@ export function ambientStyleScript(): string {
       // driven by the 设置界面毛玻璃 slider, so it reads as glass like the
       // main UI instead of a solid slab.
       '[data-dsh-settings-panel] { background-color: var(--dsh-glass-settings-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: blur(var(--dsh-glass-settings-blur, 24px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-settings-blur, 24px)) saturate(140%) !important; }',
+      // "确认启用 Full access？" 确认弹窗 (_confirmation_<hash>_<n>，由 通用设置
+      // → 权限 选择 Full access 触发): DSH 用 OPAQUE rgb(32,38,52) 画卡片且无
+      // blur——一块实心灰板。改用弹出层毛玻璃(同下拉菜单/悬浮卡家族)，让确认
+      // 弹窗融入玻璃主题。透明度用固定值(0.35)而非 --dsh-glass-popup-bg：遮罩
+      // 兄弟层(_mask_)已压暗到 50% 黑，若随弹出层滑块到 0.07 会透明得几乎看不
+      // 到卡片边界；固定 0.35 保证毛玻璃卡清晰浮在压暗页面上，模糊仍跟随弹出层
+      // 滑块。遮罩本身保留暗色。
+      '[class*="_confirmation_"] { background-color: rgba(39,46,62,0.35) !important; backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; -webkit-backdrop-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%) !important; }',
       // Tool-call output (Bash etc.) code blocks: DSH fills them with
       // --dsw-alias-markdown-code-block (opaque) and the banner with
       // --dsw-alias-markdown-code-block-banner (opaque). Repaint both with the
       // glass alpha so the popped-out command/output frame matches the panes.
       // The banner sits on the block, so give it one extra translucent layer
       // to stay slightly distinct while still reading as glass.
-      '[class*=\"_block_178r4_4\"], [class*=\"_block_10eou_7\"], [class*=\"_block_biesw_7\"], [class*=\"_block_srovd_7\"], [class*=\"_block_s66q0_7\"] { background: var(--dsw-specific-panel-fill, rgba(15,17,23,0.224)) !important; }',
+      '[class*=\"_block_178r4_4\"], [class*=\"_block_10eou_7\"], [class*=\"_block_biesw_7\"], [class*=\"_block_srovd_7\"], [class*=\"_block_s66q0_7\"] { background: var(--dsw-specific-panel-fill, rgba(15,17,23,0.224)) !important; backdrop-filter: blur(18px) saturate(150%) !important; -webkit-backdrop-filter: blur(18px) saturate(150%) !important; }',
       '[class*=\"_bannerWrap_178r4_21\"] { background-color: var(--dsw-specific-panel-fill, rgba(15,17,23,0.224)) !important; }',
       '[class*=\"_banner_178r4_21\"], [class*=\"_banner_biesw_21\"], [class*=\"_header_10eou_38\"] { background-color: var(--dsw-specific-panel-fill, rgba(15,17,23,0.224)) !important; }',
+      // Tool-output block width: Ctrl + mouse wheel over a tool-call output
+      // block adjusts the width of its output lines. The width rides a
+      // --dsh-output-width variable (a percentage of the container), set +
+      // persisted by the wheel handler below; default 100% = the block's
+      // native full width, so with no adjustment nothing changes. Narrower
+      // values wrap the pre's long lines earlier; the block keeps auto
+      // horizontal margins so it stays centred as it shrinks.
+      // Target the OUTER tool-call row and the markdown code-fence blocks
+      // (_block_*). Tool calls NEST ztWv_q_callRow (an outer row wraps
+      // sub-call rows), so constraining EVERY row would compound the shrink
+      // (each % of the previous). The :not(...) descendant guard keeps the
+      // max-width on the OUTERMOST row only; inner rows follow it by layout.
+      // max-width not width, so a wider-than-container value lets the block
+      // overflow (long lines read full-width) without pushing the column.
+      '[class*=\"ztWv_q_callRow\"]:not([class*=\"ztWv_q_callRow\"] [class*=\"ztWv_q_callRow\"]), [class*=\"Sxvs8a_root\"], [class*=\"_block_178r4_4\"], [class*=\"_block_10eou_7\"], [class*=\"_block_biesw_7\"], [class*=\"_block_srovd_7\"], [class*=\"_block_s66q0_7\"] { max-width: var(--dsh-output-width, 100%) !important; margin-left: auto !important; margin-right: auto !important; }',
+      '[class*=\"_block_178r4_4\"] :where(pre), [class*=\"_block_10eou_7\"] :where(pre), [class*=\"_block_biesw_7\"] :where(pre) { width: 100% !important; }',
       // Sidebar list bottom fade: its gradient endpoint follows
       // --dsw-alias-bg-base, which the glass tint makes translucent, so the
       // fade stacks a second translucent layer on the sidebar's own
@@ -1161,6 +1219,245 @@ export function ambientStyleScript(): string {
       }
     }
     keepComposerFloating()
+
+    // ── Center-column width: Ctrl + mouse wheel ──
+    // Holding Ctrl and scrolling while the pointer is anywhere over the
+    // center output column widens/narrows the ENTIRE column's display width
+    // (not just one tool block). The width is applied as a fixed pixel value
+    // on the grid template's middle track (replacing the elastic
+    // minmax(0,1fr)), persisted in localStorage (dsh-desktop-center-width).
+    // The listener is added once (guarded by a global so re-injections and
+    // theme re-applies never stack a second copy); a full page reload clears
+    // it with the JS context, so no explicit removal is needed.
+    const CENTER_W_KEY = 'dsh-desktop-center-width'
+    let centerW = 0 // 0 = unset, keep the DSH default elastic minmax(0,1fr)
+    try {
+      const saved = parseInt(localStorage.getItem(CENTER_W_KEY) || '0', 10)
+      if (!Number.isNaN(saved) && saved > 0) centerW = saved
+    } catch {}
+    const frameEl = () => document.querySelector('[class*="pI_x6G_frame"]')
+    const centerColEl = () => document.querySelector('[class*="pI_x6G_centerCol"]')
+    const parseTracks = (gtc) => {
+      // 3 tracks (sidebar / center / details). The middle track may itself
+      // contain spaces (e.g. minmax(0px, 1fr)), so split by matching the
+      // first and last whitespace-delimited tokens, leaving the middle whole.
+      const m = /^\\S+\\s+(.*)\\s+\\S+$/.exec((gtc || '').trim())
+      if (m === null) return null
+      const first = (gtc || '').trim().match(/^\\S+/)[0]
+      const last = (gtc || '').trim().match(/\\S+$/)[0]
+      return { first, middle: m[1], last }
+    }
+    // 默认(未调整)中列宽度：网格处于弹性 minmax(0,1fr) 时中心列的渲染宽度，
+    // 即窗口宽减侧边栏与右侧详情轨。它是 ctrl+滚轮的下限——用户要求缩小时
+    // 中列不得低于"没改前"的默认宽度，只能往更宽调、再缩回默认为止。
+    // 必须在 applyOnce 应用持久宽度之前读取，此时中列还是弹性值。
+    // 用 let：onOutWheel 会在布局变化后刷新下限（const 会在运行时抛 TypeError，
+    // 且这段代码在模板字符串里 tsc 检查不到）。
+    let defaultW = (() => {
+      const frame = frameEl()
+      if (frame === null) return 0
+      const tracks = parseTracks(frame.style.gridTemplateColumns)
+      if (tracks === null) return 0
+      const firstW = /^\\d+px$/.test(tracks.first) ? parseInt(tracks.first, 10) : 0
+      const lastW = /^\\d+px$/.test(tracks.last) ? parseInt(tracks.last, 10) : 0
+      return Math.round(innerWidth - firstW - lastW)
+    })()
+    // 内层对话流宽度：上游 ConversationRoot 用固定 748px 的
+    // --dsh-chat-content-width 把消息列/输入卡钉死居中，仅拉宽外层网格列
+    // 文字宽度不会变。跟随中列宽度按 90% 同步覆盖该变量（zh_pro 旧实现同款
+    // 思路），列多宽输出就有多宽；中列回到弹性默认(0)时移除覆盖交还上游默认。
+    // --dsh-chat-content-width 定义在 [data-conversation-scroll]（scrollBody）
+    // 的父元素（ConversationRoot root）上，下游消息列/输入卡都继承它。
+    const CHAT_CONTENT_FACTOR = 0.9
+    const chatRootEl = () => {
+      if (document.body === null || typeof document.body.querySelector !== 'function') return null
+      const scroll = document.body.querySelector('[data-conversation-scroll]')
+      return scroll === null || scroll.parentElement === null ? null : scroll.parentElement
+    }
+    const applyContentWidth = () => {
+      const root = chatRootEl()
+      if (root === null || typeof root.style === 'undefined') return
+      if (centerW > 0) {
+        root.style.setProperty('--dsh-chat-content-width', Math.round(centerW * CHAT_CONTENT_FACTOR) + 'px', 'important')
+      } else {
+        root.style.removeProperty('--dsh-chat-content-width')
+      }
+    }
+    const applyCenterW = (w) => {
+      centerW = w
+      const frame = frameEl()
+      if (frame !== null) {
+        const tracks = parseTracks(frame.style.gridTemplateColumns)
+        if (tracks !== null) {
+          const middle = centerW > 0 ? centerW + 'px' : 'minmax(0px, 1fr)'
+          // When the center outgrows its natural elastic width it grows INTO
+          // the details track; yield the details width so the three-track grid
+          // never overflows the window (the details panel re-appears when the
+          // center narrows back or the SPA rebuilds the frame).
+          let last = tracks.last
+          if (centerW > 0 && /^\\d+px$/.test(tracks.last)) {
+            const firstW = /^\\d+px$/.test(tracks.first) ? parseInt(tracks.first, 10) : 56
+            const lastW = parseInt(tracks.last, 10)
+            const naturalW = Math.round(innerWidth - firstW - lastW)
+            if (centerW > naturalW) last = Math.max(0, lastW - (centerW - naturalW)) + 'px'
+          }
+          frame.style.gridTemplateColumns = tracks.first + ' ' + middle + ' ' + last
+        }
+      }
+      applyContentWidth()
+      try { localStorage.setItem(CENTER_W_KEY, String(centerW)) } catch {}
+    }
+    const onOutWheel = (e) => {
+      if (!e.ctrlKey) return
+      const t = e.target
+      if (t === null || t === undefined || typeof t.closest !== 'function') return
+      // Only react over the center output column (not sidebar/terminal/files).
+      if (t.closest('[class*="pI_x6G_centerCol"]') === null) return
+      e.preventDefault()
+      // 当前宽度以已保存的 centerW 为准：上游在滚轮/交互事件里会同步重渲染并
+      // 抹掉我们写入的网格中列 px 值（实测事件后网格被还原为弹性宽度），网格
+      // 不能当累积基准，否则每次都从弹性宽度重算、只能在一个值上下震荡。
+      // centerW=0（未设定）时以渲染列宽起步。
+      let cur = centerW
+      if (cur <= 0) {
+        const col = centerColEl()
+        cur = col !== null ? Math.round(col.getBoundingClientRect().width) : innerWidth
+        // 中列处于弹性态时的渲染宽度 = 当前布局的默认宽度。每次从这里起步
+        // 都顺手刷新下限，布局变化（详情面板开/关、窗口缩放）后下限保持正确。
+        if (defaultW !== cur) defaultW = cur
+      }
+      if (cur <= 0) return
+      const step = e.deltaY < 0 ? 40 : -40
+      // Widest the center may reach: fill the window beside the sidebar.
+      // NOT innerWidth-300 — that clamp is narrower than the natural elastic
+      // width whenever the details panel is closed, so the first wheel-up
+      // shrank the column below its natural width and then stuck (cannot
+      // widen or narrow). Growing past the natural width yields the details
+      // track instead (see applyCenterW), so the output column can actually
+      // get wider instead of capping below it.
+      let firstW = 56
+      const frame = frameEl()
+      const tracks = frame !== null ? parseTracks(frame.style.gridTemplateColumns) : null
+      if (tracks !== null && /^\\d+px$/.test(tracks.first)) firstW = parseInt(tracks.first, 10)
+      // 下限 = 未调整前的默认宽度（用户要求 ctrl+滚轮不得把宽度压到默认值
+      // 以下）：加宽可超出默认（吃掉右侧详情轨），缩小最多回到默认宽度。
+      // 到达默认后把 centerW 归零、交还弹性布局 —— 网格回到 minmax(0,1fr)，
+      // 内容宽度交还上游默认（748px），状态与"没改前"完全一致，而不是停在
+      // 一个固定 px（那样内容会停在 0.9×默认，回不到原始样子）。
+      const floorW = defaultW > 0 ? defaultW : 420
+      const maxW = Math.max(floorW, Math.round(innerWidth - firstW))
+      let next = Math.min(maxW, Math.max(floorW, cur + step))
+      if (step < 0 && next <= floorW) next = 0
+      // Wheel-up must never shrink the column.
+      if (step > 0 && next < cur) next = Math.min(maxW, cur + step)
+      if (next !== cur) applyCenterW(next)
+    }
+    // Apply a persisted width on load (and re-apply when the SPA rebuilds
+    // the frame and drops our inline grid-template-columns).
+    const applyOnce = () => {
+      // 持久宽度若低于默认值（旧版本允许缩到默认以下），按 0 处理交还弹性
+      // 默认，让"不低于默认值"的约束在加载时也生效。
+      if (centerW > 0 && defaultW > 0 && centerW < defaultW) {
+        centerW = 0
+        try { localStorage.setItem(CENTER_W_KEY, '0') } catch {}
+      }
+      if (centerW > 0 && frameEl() !== null) {
+        const tracks = parseTracks(frameEl().style.gridTemplateColumns)
+        if (tracks !== null && tracks.middle !== centerW + 'px') applyCenterW(centerW)
+      }
+      applyContentWidth()
+    }
+    applyOnce()
+    if (window.__dshOutWheelHandler === undefined) {
+      window.__dshOutWheelHandler = onOutWheel
+      document.addEventListener('wheel', onOutWheel, { passive: false })
+    }
+    // Keep a saved width alive across SPA re-renders that rebuild the frame
+    // (project switch, session rebuild): re-apply whenever it drops back to
+    // the elastic default while a non-zero width is saved.
+    let cwTries = 0
+    const cwReapply = () => {
+      if (centerW > 0 && frameEl() !== null) {
+        const tracks = parseTracks(frameEl().style.gridTemplateColumns)
+        if (tracks !== null && tracks.middle !== centerW + 'px') applyCenterW(centerW)
+      }
+      // 即使网格轨道未变，ConversationRoot 也可能被 SPA 重建丢了内联变量，
+      // 每次轮询都顺手重同步一次内容宽度。
+      applyContentWidth()
+      if (++cwTries < 120) setTimeout(cwReapply, 1000)
+    }
+    cwReapply()
+  })()`
+}
+
+/**
+ * Streaming guard: flips `html[data-dsh-streaming]` while the agent is
+ * actively answering. The ambient stylesheet uses the attribute to suspend
+ * the sidebar hover-preview card's backdrop-filter during streaming, so the
+ * card stops re-blurring the continuously-repainting conversation behind it
+ * (which the compositor rendered as a flicker right of the sidebar).
+ *
+ * Detection rides a MutationObserver on the body: a text change or an added
+ * HTML node marks the page busy and re-arms an ~1s quiet timer; when
+ * mutations stop (streaming ended), the attribute is dropped and the frosted
+ * card returns. Cosmetic churn is filtered out so it can never keep the flag
+ * set: the brand gradient cycle repaints the sidebar SVG (childList on SVG
+ * nodes) every few seconds, and attribute/style-only changes (animations, our
+ * own attribute writes) never reach the observer. Real streaming updates the
+ * conversation text on nearly every token, which always lands as characterData
+ * or an added HTML node, so it is never missed. A page reload or re-injection
+ * resets the observer.
+ */
+export function streamingGuardScript(): string {
+  return `(() => {
+    const prev = window.__dshStreamingGuard
+    if (prev) {
+      prev.disconnect()
+      window.__dshStreamingGuard = undefined
+    }
+    const root = document.documentElement
+    const SVG_NS = 'http://www.w3.org/2000/svg'
+    let quietTimer = null
+    const setStreaming = (on) => {
+      if (on) {
+        if (!root.hasAttribute('data-dsh-streaming')) root.setAttribute('data-dsh-streaming', '1')
+      } else if (root.hasAttribute('data-dsh-streaming')) {
+        root.removeAttribute('data-dsh-streaming')
+      }
+    }
+    const markBusy = () => {
+      setStreaming(true)
+      if (quietTimer !== null) clearTimeout(quietTimer)
+      quietTimer = setTimeout(() => { quietTimer = null; setStreaming(false) }, 1000)
+    }
+    const isSvg = (n) => n.nodeType === 1 && n.namespaceURI === SVG_NS
+    const isSvgText = (n) => {
+      const p = n.parentElement
+      return p !== null && (isSvg(p) || (p.closest !== undefined && p.closest('svg') !== null))
+    }
+    const obs = new MutationObserver((muts) => {
+      for (const m of muts) {
+        if (m.type === 'characterData') {
+          if (isSvgText(m.target)) continue
+          markBusy(); return
+        }
+        if (m.type === 'childList' && m.addedNodes !== null && m.addedNodes.length > 0) {
+          // Ignore pure-SVG churn (the brand gradient cycle) and ported-in
+          // nodes that are not page content; only real HTML additions count.
+          let htmlAdded = false
+          for (let i = 0; i < m.addedNodes.length; i += 1) {
+            const n = m.addedNodes[i]
+            if (isSvg(n)) continue
+            if (n.nodeType === 3 && (!n.textContent || n.textContent.trim() === '')) continue
+            htmlAdded = true
+            break
+          }
+          if (htmlAdded) { markBusy(); return }
+        }
+      }
+    })
+    window.__dshStreamingGuard = obs
+    obs.observe(document.body, { childList: true, characterData: true, subtree: true })
   })()`
 }
 
@@ -1241,6 +1538,16 @@ export function whaleSprayScript(): string {
     }
 
     const triggerZone = (x, y) => {
+      // The desktop file-browser sidebar (主题设置 → 桌面功能 → 侧边栏) floats
+      // over the page as a fixed right-hand panel, OUTSIDE the DSH column
+      // layout — treat it as part of the center pane so the cursor effect
+      // applies there too, using the center (右侧) mode. Its file rows are not
+      // chat messages, so the composer/message exclusions below are skipped.
+      const filesPanel = document.getElementById('dsh-files-panel')
+      if (filesPanel !== null && filesPanel.style.display !== 'none') {
+        const fr = filesPanel.getBoundingClientRect()
+        if (x >= fr.left && x <= fr.right && y >= fr.top && y <= fr.bottom) return 'center'
+      }
       // 'sidebar' or 'center' when the point is a trigger area, else null.
       const sidebar = document.querySelector('[class*="_sidebarCol"]')
       const center = document.querySelector('[class*="_centerCol"]')
@@ -1706,11 +2013,19 @@ export function terminalScript(): string {
           const footStyle = document.createElement('style')
           footStyle.id = 'dsh-sesslog-style'
           footStyle.textContent = [
-            // Settings trigger: fixed 126px icon-only row at its original
-            // left spot; the Session log icon sits just right of it.
+            // Settings trigger: fixed 126px row at its original left spot;
+            // the Session log icon sits just right of it. The trigger label
+            // ("设置") is now SHOWN — the SPA ships it display:none and the
+            // earlier icon-only design hid it (user: 将左下角设置按钮的名字
+            // 设置显示出来). gap 4px + span padding/text-align reset pull the
+            // label right against the gear icon — the SPA ships the label
+            // span with text-align:center + 8px padding + ~82px width, which
+            // centered the text ~37px right of the icon (user: 还是离得很远
+            // 你看下啥情况). Reset makes the 2 chars sit 4px after the gear
+            // (user: 间距设置4px; verified: svg 26..42, text 46..74, gap 4).
             '[class*="_footArea"] [class*="_settingsArea"] { display: flex !important; align-items: center !important; box-sizing: border-box !important; }',
-            '[class*="_footArea"] [class*="_settingsArea"] [class*="_trigger"] { width: 126px !important; min-width: 0 !important; padding: 6px 8px !important; margin-right: 0 !important; justify-content: flex-start !important; }',
-            '[class*="_footArea"] [class*="_settingsArea"] [class*="_trigger"] span { display: none !important; }',
+            '[class*="_footArea"] [class*="_settingsArea"] [class*="_trigger"] { width: 126px !important; min-width: 0 !important; padding: 6px 8px !important; margin-right: 0 !important; justify-content: flex-start !important; gap: 4px !important; }',
+            '[class*="_footArea"] [class*="_settingsArea"] [class*="_trigger"] span { display: inline !important; padding: 0 !important; text-align: left !important; width: auto !important; }',
             // Icon-only Session log button: hide the label, keep the glyph.
             '[class*="_sessionLogButton"] > span { display: none !important; }',
             '[class*="_sessionLogButton"] { min-width: 0 !important; padding: 6px 8px !important; }',
@@ -3195,7 +3510,7 @@ export function featureControlScript(): string {
       const zh = window.__dshThemeLocale !== 'en'
       const labels = {
         title: zh ? '桌面功能' : 'Desktop features',
-        files: zh ? '显示浏览文件夹' : 'Show file browser',
+        files: zh ? '侧边栏' : 'Sidebar',
         term: zh ? '显示终端' : 'Show terminal',
         cycle: zh ? '颜色切换时间' : 'Brand color interval',
         unit: zh ? '秒' : 's',
@@ -3369,6 +3684,10 @@ export function glassControlsScript(): string {
       { key: 'input', min: 0, max: 100, def: 30, unit: '%' },
       { key: 'sidebar', min: 0, max: 100, def: 5, unit: '%' },
       { key: 'popup', min: 5, max: 100, def: 7, unit: '%' },
+      // Global saturation of the whole window (body filter: saturate). 100% =
+      // no change; applied only when != 100 so the default leaves no
+      // containing-block side effect on fixed-position elements.
+      { key: 'saturate', min: 100, max: 150, def: 100, unit: '%' },
     ]
     const values = Object.fromEntries(SLIDERS.map((s) =>
       [s.key, Math.max(s.min, Math.min(s.max, read('dsh-desktop-glass-' + s.key, s.def)))]))
@@ -3390,10 +3709,22 @@ export function glassControlsScript(): string {
       // 12% floor over a wallpaper made the sidebar read ~10 levels darker than
       // the header card and shifted it off the wallpaper (user: 跟顶部的一样).
       const sidebarBg = a(values.sidebar)
+      // Global saturation: applied to body only when != 100 (saturate(100%)
+      // still creates a containing block for fixed children, so the default
+      // must leave body filter-free to avoid shifting fixed overlays/docks).
+      // A body filter makes fixed children position against body instead of
+      // the viewport; pinning html/body to the viewport and hiding their
+      // scrollbars keeps those fixed overlays in place and suppresses the
+      // outer horizontal/vertical scrollbars on the window edge.
+      const satActive = values.saturate !== 100
+      // overflow:hidden needs !important: the hosted SPA sets its own
+      // overflow on html/body and would otherwise win over this rule.
+      const satRule = satActive ? ('filter: saturate(' + values.saturate + '%); height: 100%; overflow: hidden !important; ') : ''
+      const satHtml = satActive ? 'html { height: 100%; overflow: hidden !important; } ' : ''
       // Hardware GL (use-angle=gl, see main.ts) renders full-window
       // backdrop-filters cheaply (~20% GPU process vs 660% under SwiftShader),
       // so the big panes get real frosted blur again, driven by mainblur.
-      s.textContent = 'body { ' +
+      s.textContent = satHtml + 'body { ' +
         '--dsh-glass-main-bg: ' + a(values.main) + '; ' +
         '--dsh-glass-main-blur: ' + values.mainblur + 'px; ' +
         '--dsh-glass-settings-bg: ' + a(values.settings) + '; ' +
@@ -3402,6 +3733,7 @@ export function glassControlsScript(): string {
         '--dsh-glass-sidebar-bg: ' + sidebarBg + '; ' +
         '--dsh-glass-popup-bg: ' + b(values.popup) + '; ' +
         '--dsh-glass-popup-blur: ' + values.popupblur + 'px; ' +
+        satRule +
       '}'
     }
     const mount = () => {
@@ -3420,6 +3752,7 @@ export function glassControlsScript(): string {
         mainblur: zh ? '界面模糊' : 'Surface blur',
         popup: zh ? '弹出层' : 'Popup menus',
         popupblur: zh ? '弹窗模糊' : 'Popup blur',
+        saturate: zh ? '整体饱和度' : 'Saturation',
       }
       const existing = document.querySelector('[data-dsh-glass-controls]')
       if (existing !== null) {
@@ -3447,6 +3780,7 @@ export function glassControlsScript(): string {
         '<div style="color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;' + (first ? '' : 'margin-top:6px;') + 'font-weight:500" ' + dataAttr + '>' + text + '</div>'
       const blurRows = SLIDERS.filter((s) => BLUR_KEYS.includes(s.key)).map(sliderRow).join('')
       const alphaRows = SLIDERS.filter((s) => ALPHA_KEYS.includes(s.key)).map(sliderRow).join('')
+      const satRows = SLIDERS.filter((s) => s.key === 'saturate').map(sliderRow).join('')
       control.innerHTML =
         '<div style="display:flex;flex-direction:column;gap:10px">' +
           '<div style="display:flex;flex-direction:column;gap:4px">' +
@@ -3454,6 +3788,7 @@ export function glassControlsScript(): string {
           blurRows +
           groupTitle('data-dsh-glass-group-alpha', labels.groupAlpha, false) +
           alphaRows +
+          satRows +
           '</div>' +
         '</div>' +
         '<style>' +

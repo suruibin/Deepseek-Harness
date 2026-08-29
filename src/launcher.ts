@@ -5,12 +5,12 @@
  * `main.ts`.
  */
 
-import type { ChildProcess } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { execFile, type ChildProcess } from 'node:child_process'
+import { existsSync, readFileSync, readlinkSync } from 'node:fs'
 import { join } from 'node:path'
 
-/** Server flags every surface launch passes to `dsh web`. Port 0 requests an OS-assigned port (headless already uses this). */
-export const WEB_ARGS = ['web', '--host', '127.0.0.1', '--port', '0'] as const
+/** Server flags every surface launch passes to `dsh web`. Port 0 requests an OS-assigned port (headless already uses this). `--no-open` keeps the system browser closed: the desktop shell hosts the GUI in its own window, and `dsh web` would otherwise open a browser tab on every launch/restart. */
+export const WEB_ARGS = ['web', '--host', '127.0.0.1', '--port', '0', '--no-open'] as const
 
 /** The stdout prefix `dsh web` prints once the server listens. */
 const READY_LINE_PREFIX = 'dsh web: '
@@ -292,4 +292,87 @@ export async function detectExistingServer(options: ExistingServerOptions): Prom
     }
   }
   return undefined
+}
+
+/**
+ * Find the first process id listening on a TCP port. POSIX uses `lsof -ti
+ * tcp:<port>`; Windows parses `netstat -ano` for the LISTENING row. Used by
+ * the desktop shell's "restart dsh" path to locate an externally-spawned
+ * server that this process did not create.
+ * @param port - the TCP port to probe.
+ * @returns the listening pid, or undefined when none is found or the lookup fails.
+ */
+export async function pidOnPort(port: number): Promise<number | undefined> {
+  if (process.platform === 'win32') {
+    return new Promise((resolve) => {
+      execFile('netstat', ['-ano'], { windowsHide: true }, (error, stdout) => {
+        if (error) {
+          resolve(undefined)
+          return
+        }
+        for (const line of stdout.split(/\r?\n/)) {
+          const parts = line.trim().split(/\s+/)
+          if (parts.length < 5) continue
+          const local = parts[1]
+          const state = parts[3]
+          const pid = Number(parts[4])
+          if (local !== undefined && state === 'LISTENING' && local.endsWith(`:${String(port)}`) && Number.isInteger(pid) && pid > 0) {
+            resolve(pid)
+            return
+          }
+        }
+        resolve(undefined)
+      })
+    })
+  }
+  return new Promise((resolve) => {
+    // -sTCP:LISTEN keeps only the socket OWNER, not the connected clients
+    // (the shell's own NetworkService, browsers) that share the port.
+    execFile('lsof', ['-nP', `-iTCP:${String(port)}`, '-sTCP:LISTEN', '-t'], { windowsHide: true }, (error, stdout) => {
+      if (error) {
+        resolve(undefined)
+        return
+      }
+      for (const line of stdout.split(/\r?\n/)) {
+        const pid = Number(line.trim())
+        if (Number.isInteger(pid) && pid > 0) {
+          resolve(pid)
+          return
+        }
+      }
+      resolve(undefined)
+    })
+  })
+}
+
+/**
+ * Read a process's original command line (argv). Only Linux exposes it via
+ * `/proc/<pid>/cmdline`; other platforms return undefined so the caller falls
+ * back to its own launch resolution.
+ * @param pid - the process id to inspect.
+ * @returns the argv array, or undefined when unavailable.
+ */
+export async function processCmdline(pid: number): Promise<string[] | undefined> {
+  if (process.platform !== 'linux') return undefined
+  try {
+    const args = readFileSync(`/proc/${String(pid)}/cmdline`, 'utf8').split('\0').filter((part) => part !== '')
+    return args.length > 0 ? args : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Read a process's working directory. Only Linux exposes it via the
+ * `/proc/<pid>/cwd` symlink; other platforms return undefined.
+ * @param pid - the process id to inspect.
+ * @returns the cwd, or undefined when unavailable.
+ */
+export async function processCwd(pid: number): Promise<string | undefined> {
+  if (process.platform !== 'linux') return undefined
+  try {
+    return readlinkSync(`/proc/${String(pid)}/cwd`)
+  } catch {
+    return undefined
+  }
 }
