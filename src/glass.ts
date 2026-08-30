@@ -51,7 +51,7 @@ const SURFACE_DARK: Record<string, string> = {
   '--dsw-alias-bg-layer-3': 'rgb(39, 46, 62)', // plugin/config cards, config inputs
   '--dsw-alias-bg-module-platform': 'rgb(39, 46, 62)', // appearance selected cube, badges
   '--dsw-specific-menu': 'rgb(39, 46, 62)', // dropdown menus
-  '--dsw-alias-tooltip-bg': 'rgb(46, 54, 73)', // tooltips
+  '--dsw-alias-tooltip-bg': 'rgba(46, 54, 73, 0.62)', // tooltips
   '--dsw-specific-input-major': 'rgb(58, 68, 90)', // input buttons, image viewer (brighter)
   '--dsw-specific-login-input': 'rgb(52, 62, 84)', // login fields (brighter)
   '--dsw-alias-button-elevated-fill': 'rgb(32, 38, 52)', // "new session" button, rename input
@@ -69,7 +69,7 @@ const SURFACE_LIGHT: Record<string, string> = {
   '--dsw-alias-bg-layer-3': 'rgb(233, 237, 247)',
   '--dsw-alias-bg-module-platform': 'rgb(233, 237, 247)',
   '--dsw-specific-menu': 'rgb(233, 237, 247)',
-  '--dsw-alias-tooltip-bg': 'rgb(45, 52, 70)', // dark blue: tooltip text is always white
+  '--dsw-alias-tooltip-bg': 'rgba(45, 52, 70, 0.62)', // dark blue: tooltip text is always white
   '--dsw-specific-input-major': 'rgb(238, 241, 249)',
   '--dsw-specific-login-input': 'rgb(244, 246, 251)',
   '--dsw-alias-button-elevated-fill': 'rgb(238, 241, 249)',
@@ -662,6 +662,14 @@ export function ambientStyleScript(): string {
       // (上下文已用, JObwrW_panel) rides the same variable via
       // --dsw-specific-menu and joins the family.
       '[class*=\"_menu\"], [class*=\"_sideTop_\"], [class*=\"JObwrW_panel\"], [class*=\"_list_\"], [class*=\"_submenu_\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
+      // 会话行 "..." 操作菜单(p-xYUq_actions / p-xYUq_action, _8_XoUG_action)与
+      // tool-call 消息操作按钮(_action_178r4_53)不含 _menu 后缀,未被上面弹出层规则
+      // 覆盖,DSH 用实心中性色绘制。并入弹出层毛玻璃家族,与下拉菜单同族。
+      '[class*="p-xYUq_action"], [class*="_8_XoUG_action"], [class*="_action_178r4_53"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
+      // 原生/自定义 tooltip:DSH 用 --dsw-alias-tooltip-bg(实心)绘制且文字恒白,该别名
+      // 已改为半透明(见 SURFACE_DARK/LIGHT)。这里给 tooltip 元素补上弹出层模糊,做成
+      // 毛玻璃;alpha 取 0.62 保证白字仍清晰可读。浏览器原生 title 气泡无法用 CSS 上玻璃。
+      '[class*="_tooltip"] { background-color: rgba(39,46,62,0.62) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
       // Queued-message dock (插话发送, _7yHdaG_dock) sits ABOVE the composer
       // card; give it the SAME input-card glass (input-bg + main blur) and the
       // composer's 22px radius on ALL corners (the SPA paints the panel with
