@@ -93,6 +93,9 @@ const initialGlass = loadGlassSettings(userData)
 let windowAlpha = initialGlass.alpha
 let windowTheme: GlassTheme = initialGlass.theme
 let wallpaperFile: string | null = initialGlass.wallpaper
+// xterm UMD + CSS are ~1MB of static text read at injection; cached after the
+// first load so repeated page navigations do not re-read them from disk.
+let xtermAssets: { js: string; css: string } | null = null
 
 /** Persist the current glass settings (alpha, theme, wallpaper). */
 function saveGlass(): void {
@@ -152,8 +155,7 @@ async function applyGlassTheme(window: BrowserWindow, theme: GlassTheme): Promis
  */
 async function applyGlass(window: BrowserWindow): Promise<void> {
   await applyGlassTheme(window, windowTheme)
-  await inject(window, () => glassGuardScript(windowAlpha))
-  await inject(window, wallpaperLayerScript)
+  await injectBatch(window, [() => glassGuardScript(windowAlpha), wallpaperLayerScript])
 }
 
 /**
@@ -169,6 +171,21 @@ async function inject(window: BrowserWindow, script: () => string): Promise<void
   } catch {
     // Page not ready; the next did-finish-load re-applies it.
   }
+}
+
+/**
+ * Execute a batch of injection scripts in ONE executeJavaScript round-trip
+ * (the injected scripts re-run on every load/navigation, and a per-script
+ * round-trip multiplies that cost). Each script is wrapped in its own
+ * try/catch so a failing script does not abort the rest, mirroring the
+ * per-call isolation of inject().
+ * @param window - the window hosting the page.
+ * @param scripts - script producers, run in array order.
+ */
+async function injectBatch(window: BrowserWindow, scripts: (() => string)[]): Promise<void> {
+  if (scripts.length === 0) return
+  const body = scripts.map((s) => `try { ${s()} } catch {}`).join(';\n')
+  await inject(window, () => body)
 }
 
 /**
@@ -223,13 +240,20 @@ async function injectTerminal(window: BrowserWindow): Promise<void> {
     // tab switches are page-internal and keep their sessions.
     ptyRegistry.disposeAll()
     attachedTermTabs.clear()
-    const { readFileSync } = await import('node:fs')
-    const xtermJs = readFileSync(require_.resolve('xterm/lib/xterm.js'), 'utf8')
-    const xtermCss = readFileSync(require_.resolve('xterm/css/xterm.css'), 'utf8')
+    // The UMD bundle + CSS are ~1MB of static text; read them once and reuse
+    // across page loads instead of re-reading from disk on every navigation.
+    let assets = xtermAssets
+    if (assets === null) {
+      const { readFileSync } = await import('node:fs')
+      assets = xtermAssets = {
+        js: readFileSync(require_.resolve('xterm/lib/xterm.js'), 'utf8'),
+        css: readFileSync(require_.resolve('xterm/css/xterm.css'), 'utf8'),
+      }
+    }
     // xterm UMD expects a browser global; executeJavaScript gives it one.
-    await window.webContents.executeJavaScript(xtermJs)
+    await window.webContents.executeJavaScript(assets.js)
     await window.webContents.executeJavaScript(
-      '(() => { const s = document.createElement(\'style\'); s.id = \'dsh-xterm-style\'; s.textContent = ' + JSON.stringify(xtermCss) + '; document.head.appendChild(s); })()',
+      '(() => { const s = document.createElement(\'style\'); s.id = \'dsh-xterm-style\'; s.textContent = ' + JSON.stringify(assets.css) + '; document.head.appendChild(s); })()',
     )
     await window.webContents.executeJavaScript(terminalScript())
   } catch {
@@ -355,7 +379,7 @@ function createWindow(url: URL): void {
     glassTimer = setTimeout(() => {
       void applyGlass(window)
       // Injection order matters: everything must follow applyGlass's theme.
-      for (const script of [
+      void injectBatch(window, [
         themeSettingsScript,
         alphaControlScript,
         wallpaperControlScript,
@@ -366,9 +390,7 @@ function createWindow(url: URL): void {
         whaleSprayScript,
         streamingGuardScript,
         sessionManageScript,
-      ]) {
-        void inject(window, script)
-      }
+      ])
       void injectPlugins(window)
       void injectTerminal(window)
     }, 800)
