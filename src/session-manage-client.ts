@@ -187,7 +187,6 @@ export function sessionManageScript(): string {
       return (typeof window.dshDesktop !== 'undefined' && window.dshDesktop !== null && window.dshDesktop.session) ? window.dshDesktop.session : null
     }
     const performDelete = function (sessionId) {
-      showToast('正在删除会话…', 2500)
       return Promise.resolve()
         .then(function () { return rpcArchive(sessionId) })
         .then(function () {
@@ -197,7 +196,6 @@ export function sessionManageScript(): string {
         })
         .then(function (res) {
           if (res !== null && res !== undefined && typeof res === 'object' && res.ok === true) {
-            showToast('会话已删除（日志已移入回收站）', 4000)
             return true
           }
           const message = res !== null && typeof res === 'object' && typeof res.message === 'string' ? res.message : '未知错误'
@@ -296,12 +294,20 @@ export function sessionManageScript(): string {
         button.setAttribute(INJECTED_MARK, '')
         const en = (anchor.textContent !== null ? anchor.textContent.trim() : '') === 'Archive session'
         const icon = button.querySelector('span:first-child')
-        if (icon !== null) { icon.textContent = '🗑'; icon.style.fontSize = '14px' }
+        if (icon !== null) {
+          // 黑白垃圾桶图标：描边 SVG 使用 currentColor，跟随菜单文字颜色（非彩色 emoji）。
+          icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>'
+          icon.style.fontSize = '14px'
+          icon.style.display = 'inline-flex'
+          icon.style.alignItems = 'center'
+          icon.style.justifyContent = 'center'
+        }
         const label = button.querySelector('span:last-child')
         const deleteLabel = en ? 'Delete session' : '删除会话'
         if (label !== null) {
           label.textContent = deleteLabel
-          label.title = '删除会话（日志移入回收站，可稍后恢复）'
+          // 移除可能被克隆继承的 title，避免悬停时弹出原生提示气泡。
+          label.removeAttribute('title')
         } else {
           button.textContent = deleteLabel
         }

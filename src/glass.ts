@@ -1441,19 +1441,39 @@ export function streamingGuardScript(): string {
       const p = n.parentElement
       return p !== null && (isSvg(p) || (p.closest !== undefined && p.closest('svg') !== null))
     }
+    // Hover-preview artifacts: the sidebar column (its rows gain a status
+    // indicator when hovered) and the hover-preview card itself
+    // (body > [class*="_card_"] and anything nested inside it). Neither
+    // reflects streaming, so their churn must not arm the streaming flag —
+    // otherwise the card's backdrop-filter stays stripped for ~1s after
+    // popping in (the "no glass at first, glass appears a moment later" bug).
+    const inHoverArtifact = (n) => {
+      let el = n.nodeType === 1 ? n : n.parentElement
+      while (el !== null && el !== document.body) {
+        if (typeof el.className !== 'string') { el = el.parentElement; continue }
+        if (el.className.indexOf('sidebarCol') !== -1) return true
+        if (el.parentElement === document.body && el.className.indexOf('_card_') !== -1) return true
+        el = el.parentElement
+      }
+      return false
+    }
     const obs = new MutationObserver((muts) => {
       for (const m of muts) {
         if (m.type === 'characterData') {
           if (isSvgText(m.target)) continue
+          if (inHoverArtifact(m.target)) continue
           markBusy(); return
         }
         if (m.type === 'childList' && m.addedNodes !== null && m.addedNodes.length > 0) {
-          // Ignore pure-SVG churn (the brand gradient cycle) and ported-in
-          // nodes that are not page content; only real HTML additions count.
+          // Ignore pure-SVG churn (the brand gradient cycle), the sidebar's
+          // hover-state churn, the hover-preview card's own insertion, and
+          // ported-in nodes that are not page content; only real HTML
+          // additions count.
           let htmlAdded = false
           for (let i = 0; i < m.addedNodes.length; i += 1) {
             const n = m.addedNodes[i]
             if (isSvg(n)) continue
+            if (inHoverArtifact(n)) continue
             if (n.nodeType === 3 && (!n.textContent || n.textContent.trim() === '')) continue
             htmlAdded = true
             break
