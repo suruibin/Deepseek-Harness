@@ -406,11 +406,15 @@ export function ambientStyleScript(): string {
       // Glass blur recipes, one per surface family, so the blur radius and
       // saturation live in ONE place instead of being repeated in every rule.
       // --dsh-glass-*-blur are set dynamically on body by glassControlsScript;
-      // these :root aliases resolve them into a full backdrop-filter value.
+      // these aliases MUST also be declared on body (NOT :root): a custom
+      // property is resolved at the element that declares it, so on :root the
+      // body-level --dsh-glass-*-blur would be invisible and the 界面模糊/弹窗模糊
+      // sliders would no-op (regression fixed). Every consumer below is a
+      // descendant of body, so body-scoped aliases reach them all.
       // The 主界面毛玻璃 slider drives main/settings/input/columns together,
       // the 弹出层 slider drives popup alone; the column recipe keeps the
       // 150% saturation chosen for the sidebar/center cards (用户: 饱和度150%).
-      ':root { --dsh-glass-main-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%); --dsh-glass-popup-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%); --dsh-glass-column-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(150%); }',
+      'body { --dsh-glass-main-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(140%); --dsh-glass-popup-filter: blur(var(--dsh-glass-popup-blur, 40px)) saturate(140%); --dsh-glass-column-filter: blur(var(--dsh-glass-main-blur, 24px)) saturate(150%); }',
       // Ambient texture + glow layers are intentionally GONE: a full-canvas
       // fixed layer with mix-blend-mode (film grain) or a radial tint
       // (html::before blue glow pooling near the top) makes the background
