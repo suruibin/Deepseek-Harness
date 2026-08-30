@@ -819,6 +819,19 @@ export function ambientStyleScript(): string {
       // 点击后 颜色是修改后的). Repaint with the same translucent glass as the
       // other controls so button and popup read as one family.
       '[class*=\"_selector\"] { background-color: rgba(39,46,62,0.45) !important; }',
+      // Agent 预设页预设卡片(rtSEdW_card): DSH 用实心 rgb(39,46,62) 绘制,在
+      // 已磨砂的设置面板上读作实心色块 (user: 内置模式卡片没有做成毛玻璃)。
+      // 面板自身已带 blur(20px),按已验证的 Chromium 行为祖先有
+      // backdrop-filter 时子级嵌套模糊不渲染,这里与 navCell/控件同族只给
+      // 半透明底色,让卡片透出面板的磨砂结果。用 [class~=] 精确匹配 token,
+      // 避免通配符误染 cardMain/cardHead 等透明子元素。
+      '[class~=\"rtSEdW_card\"] { background-color: rgba(39,46,62,0.45) !important; }',
+      // 插件页卡片: 插件配置(YyYd_a_card: 终端/Agent 循环/网页搜索与
+      // lc-settings-card)、插件市场入口(eGUBIq_setCard)与插件列表
+      // (qSYn7G_card, 272px 网格卡)同样被 DSH 画成实心 rgb(39,46,62),与
+      // Agent 预设卡片同族处理 — 半透明底色透出面板磨砂。
+      // [class~=] 精确 token 匹配,不误染各透明子元素。
+      '[class~=\"YyYd_a_card\"], [class~=\"lc-settings-card\"], [class~=\"eGUBIq_setCard\"], [class~=\"qSYn7G_card\"] { background-color: rgba(39,46,62,0.45) !important; }',
       // 光标特效 icon pickers (原生 <select>, 侧边栏/右侧): the settings row
       // flex-stretches them to the full panel width (~484px, user: 太长了).
       // Cap the width and pin them to the right edge of their row
