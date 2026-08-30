@@ -546,16 +546,21 @@ async function boot(): Promise<void> {
   const launch = resolveWebLaunch({ env: process.env })
   // 启动 dsh web 前自动检测并修复损坏的会话日志 (seq 缺口 / 多写流交错),
   // 否则 GUI 打开历史会话时会报 "corrupt session log: seq gap" 而失败。
-  try {
-    const report = repairSessionLogs()
-    if (report.fixed > 0) {
-      console.log(`[dsh-desktop] 自动修复 ${report.fixed} 个损坏的会话日志: ${report.details.filter((d) => d.fixed).map((d) => d.id).join(', ')}`)
-    } else if (report.brokenRemaining > 0) {
-      console.warn(`[dsh-desktop] ${report.brokenRemaining} 个会话日志损坏且无法自动修复`)
+  // 修复只依赖磁盘上的会话文件，与 server 启动无依赖，故用 setImmediate
+  // 让它随 server 启动并发执行，不再同步阻塞启动路径（大量会话时省去整批
+  // 同步读盘）。server 在就绪前不会写会话日志，修复窗口内无并发写者。
+  setImmediate(() => {
+    try {
+      const report = repairSessionLogs()
+      if (report.fixed > 0) {
+        console.log(`[dsh-desktop] 自动修复 ${report.fixed} 个损坏的会话日志: ${report.details.filter((d) => d.fixed).map((d) => d.id).join(', ')}`)
+      } else if (report.brokenRemaining > 0) {
+        console.warn(`[dsh-desktop] ${report.brokenRemaining} 个会话日志损坏且无法自动修复`)
+      }
+    } catch (error) {
+      console.warn(`[dsh-desktop] 会话日志自动修复失败: ${error instanceof Error ? error.message : String(error)}`)
     }
-  } catch (error) {
-    console.warn(`[dsh-desktop] 会话日志自动修复失败: ${error instanceof Error ? error.message : String(error)}`)
-  }
+  })
   // 检测是否已有 dsh web 实例在运行（如常驻 GUI）。两个 dsh web 共享
   // ~/.dsh/sessions 却无跨进程写锁，并发写同一会话会产生 seq 重复/缺口并
   // 损坏历史；复用已有实例从源头消除这类损坏。
