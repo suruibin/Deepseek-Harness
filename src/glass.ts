@@ -809,6 +809,12 @@ export function ambientStyleScript(): string {
       // 到卡片边界；固定 0.35 保证毛玻璃卡清晰浮在压暗页面上，模糊仍跟随弹出层
       // 滑块。遮罩本身保留暗色。
       '[class*="_confirmation_"] { background-color: rgba(39,46,62,0.35) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
+      // 右侧「轨迹/上下文」面板里的实心暗色块：轨迹面板的搜索框(fV0t5q_search)
+      // 与 Input/Model/Tools 表头行(_1p9O6q_plot)、上下文面板的统计卡(lc-stat，
+      // 轮次/步数/注入/压缩/剪枝/工具调用/图片 等) 都是 DSH 用 OPAQUE rgb(32,38,52)
+      // 画的暗板，与透明玻璃面板格格不入。统一改用弹出层毛玻璃(半透明深蓝灰 +
+      // 弹出层模糊)，与悬浮卡/确认弹窗同族，跟随 --dsh-glass-popup-blur 滑块。
+      '.fV0t5q_search, ._1p9O6q_plot, .lc-stat { background-color: rgba(39,46,62,0.35) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
       // Tool-call output (Bash etc.) code blocks: DSH fills them with
       // --dsw-alias-markdown-code-block (opaque) and the banner with
       // --dsw-alias-markdown-code-block-banner (opaque). Repaint both with the
