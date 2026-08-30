@@ -882,9 +882,13 @@ export function glassControlsScript(): string {
       if (container === undefined) return
       const wp = [...container.children].find((k) => (k.textContent || '').trim().startsWith('背景壁纸'))
       if (wp !== undefined && wp.style.order !== '-2') wp.style.order = '-2'
-      // 背景透明度 → 界面毛玻璃 前. order only accepts integers, so rank
-      // explicitly: wallpaper -2, opacity -1, glass 0; the rest stay at the
-      // default 0 and keep their DOM order after the glass section.
+      // 自动更换壁纸 → 背景透明度 前, 背景透明度 → 界面毛玻璃 前. order only
+      // accepts integers, so rank explicitly: wallpaper -2, rotate/opacity -1
+      // (rotate's slot precedes the opacity slot in the DOM, so within the
+      // equal -1 rank the rotate row renders first), glass 0; the rest stay
+      // at the default 0 and keep their DOM order after the glass section.
+      const zd = [...container.children].find((k) => (k.textContent || '').trim().startsWith('自动更换壁纸'))
+      if (zd !== undefined && zd.style.order !== '-1') zd.style.order = '-1'
       const bt = [...container.children].find((k) => (k.textContent || '').trim().startsWith('背景透明度'))
       if (bt !== undefined && bt.style.order !== '-1') bt.style.order = '-1'
       const jm = [...container.children].find((k) => (k.textContent || '').trim().startsWith('界面毛玻璃'))
@@ -1070,14 +1074,17 @@ export function themeSettingsScript(): string {
       controls.dataset.dshThemeControls = 'true'
       controls.style.cssText = 'display:flex;flex-direction:column'
       // Fixed order via dedicated slots: interface glass first (the most
-      // used control), then the brand color-switch interval (before the
-      // opacity slider per user preference), the opacity slider, the
-      // wallpaper block, and the panel-visibility toggles last. Mounting
-      // order of the injected controls is otherwise racy (observer-driven).
+      // used control), then the auto-rotate wallpaper row directly above
+      // the opacity slider (per user preference), the opacity slider, the
+      // wallpaper block, then the brand color-switch interval, and the
+      // panel-visibility toggles last. Mounting order of the injected
+      // controls is otherwise racy (observer-driven).
       const glassSlot = document.createElement('div')
       glassSlot.dataset.dshThemeGlassSlot = 'true'
       const cycleSlot = document.createElement('div')
       cycleSlot.dataset.dshThemeCycleSlot = 'true'
+      const rotateSlot = document.createElement('div')
+      rotateSlot.dataset.dshThemeRotateSlot = 'true'
       const alphaSlot = document.createElement('div')
       alphaSlot.dataset.dshThemeAlphaSlot = 'true'
       const wallpaperSlot = document.createElement('div')
@@ -1085,9 +1092,10 @@ export function themeSettingsScript(): string {
       const featureSlot = document.createElement('div')
       featureSlot.dataset.dshThemeFeatureSlot = 'true'
       controls.appendChild(glassSlot)
-      controls.appendChild(cycleSlot)
+      controls.appendChild(rotateSlot)
       controls.appendChild(alphaSlot)
       controls.appendChild(wallpaperSlot)
+      controls.appendChild(cycleSlot)
       controls.appendChild(featureSlot)
       group.appendChild(controls)
       panel.appendChild(group)

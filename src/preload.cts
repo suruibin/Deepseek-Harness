@@ -75,8 +75,12 @@ const wallpaper = {
   pick: (): Promise<unknown> => ipcRenderer.invoke('dsh:wallpaper-pick'),
   /** Remove the wallpaper; resolves to { ok: true }. */
   clear: (): Promise<unknown> => ipcRenderer.invoke('dsh:wallpaper-clear'),
-  /** Current wallpaper; resolves to { url, file } or { url: null }. */
+  /** Current wallpaper; resolves to { url, file, color, folder, rotate } or { url: null }. */
   get: (): Promise<unknown> => ipcRenderer.invoke('dsh:wallpaper-get'),
+  /** Set the solid-color background (lowercase #rrggbb) or null to clear it; resolves to { ok } | { error }. */
+  setColor: (color: string | null): Promise<unknown> => ipcRenderer.invoke('dsh:wallpaper-set-color', color),
+  /** Set auto-rotate options { enabled, minutes, folder? }; resolves to { ok } | { error }. */
+  setRotate: (opts: unknown): Promise<unknown> => ipcRenderer.invoke('dsh:wallpaper-set-rotate', opts),
   /** Open the system folder picker; resolves to { path, entries } | { canceled: true } | { error }. */
   folderPick: (): Promise<unknown> => ipcRenderer.invoke('dsh:wallpaper-folder-pick'),
   /** Render a thumbnail data URL for an image path; resolves to { url } | { error }. */

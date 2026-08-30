@@ -26,6 +26,22 @@ export interface GlassSettings {
   theme: GlassTheme
   /** Stored wallpaper file name under userData, or null for none. */
   wallpaper: string | null
+  /** Flat solid color (lowercase #rrggbb) used as the background when no image wallpaper is set. */
+  wallpaperColor?: string | null
+  /** Folder the auto-rotate cycles image wallpapers from, or null. */
+  wallpaperFolder?: string | null
+  /** Whether auto-rotate is enabled. */
+  wallpaperRotate?: boolean
+  /** Auto-rotate interval in minutes (1..1440). */
+  wallpaperRotateMinutes?: number
+}
+
+/** Auto-rotate interval default (minutes). */
+export const DEFAULT_ROTATE_MINUTES = 30
+
+/** True for a valid lowercase 6-digit hex color like `#8f7b79`. */
+export function isHexColor(value: unknown): value is string {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/.test(value)
 }
 
 /** How the hosted page's dark/light theme is chosen. */
@@ -121,16 +137,31 @@ export function loadGlassSettings(userData: string): GlassSettings {
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed === 'object' && parsed !== null && 'alpha' in (parsed as Record<string, unknown>)) {
       const p = parsed as Record<string, unknown>
+      const rotateMinutes = typeof p.wallpaperRotateMinutes === 'number' && Number.isFinite(p.wallpaperRotateMinutes)
+        ? Math.min(1440, Math.max(1, Math.round(p.wallpaperRotateMinutes)))
+        : DEFAULT_ROTATE_MINUTES
       return {
         alpha: clampUnit(typeof p.alpha === 'number' ? p.alpha : DEFAULT_ALPHA),
         theme: normalizeTheme(p.theme),
         wallpaper: typeof p.wallpaper === 'string' && p.wallpaper !== '' ? p.wallpaper : null,
+        wallpaperColor: typeof p.wallpaperColor === 'string' ? p.wallpaperColor.toLowerCase() : null,
+        wallpaperFolder: typeof p.wallpaperFolder === 'string' && p.wallpaperFolder !== '' ? p.wallpaperFolder : null,
+        wallpaperRotate: p.wallpaperRotate === true,
+        wallpaperRotateMinutes: rotateMinutes,
       }
     }
   } catch {
     // Missing or unparsable settings are not worth surfacing; use defaults.
   }
-  return { alpha: DEFAULT_ALPHA, theme: DEFAULT_THEME, wallpaper: null }
+  return {
+    alpha: DEFAULT_ALPHA,
+    theme: DEFAULT_THEME,
+    wallpaper: null,
+    wallpaperColor: null,
+    wallpaperFolder: null,
+    wallpaperRotate: false,
+    wallpaperRotateMinutes: DEFAULT_ROTATE_MINUTES,
+  }
 }
 
 /** Persist glass settings (best-effort; a failed write must not crash the app). */
@@ -272,26 +303,8 @@ export function alphaControlScript(): string {
               '<input type="checkbox" style="width:15px;height:15px;accent-color:#4176e6;cursor:pointer">' +
               '<span>启用</span>' +
             '</label>' +
-            '<div style="display:flex;align-items:center;gap:10px;padding-left:12px">' +
-              '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;min-width:52px">侧边栏</span>' +
-              '<select data-dsh-fx-sidebar style="flex:1;background:rgb(39,46,62);color:var(--dsw-alias-label-primary);border:none;border-radius:18px;padding:6px 12px;font-size:13px;cursor:pointer;outline:none">' +
-                '<option value="star">星星</option>' +
-                '<option value="water">吐水</option>' +
-                '<option value="snow">雪花</option>' +
-                '<option value="spark">火花</option>' +
-                '<option value="none">关闭</option>' +
-              '</select>' +
-            '</div>' +
-            '<div style="display:flex;align-items:center;gap:10px;padding-left:12px">' +
-              '<span style="color:var(--dsw-alias-label-secondary);font-size:13px;min-width:52px">右侧</span>' +
-              '<select data-dsh-fx-center style="flex:1;background:rgb(39,46,62);color:var(--dsw-alias-label-primary);border:none;border-radius:18px;padding:6px 12px;font-size:13px;cursor:pointer;outline:none">' +
-                '<option value="water">吐水</option>' +
-                '<option value="star">星星</option>' +
-                '<option value="snow">雪花</option>' +
-                '<option value="spark">火花</option>' +
-                '<option value="none">关闭</option>' +
-              '</select>' +
-            '</div>' +
+            '<div data-dsh-fx-sidebar-row></div>' +
+            '<div data-dsh-fx-center-row></div>' +
           '</div>' +
           '<style>' +
             '[data-dsh-glass-alpha] input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid #4176e6;box-shadow:0 1px 4px rgba(15,20,35,0.35),0 0 0 3px rgba(65,118,230,0.18);transition:box-shadow 0.15s ease,transform 0.15s ease;cursor:pointer}' +
@@ -325,11 +338,16 @@ export function alphaControlScript(): string {
         // Cursor effect toggle + per-pane mode: persisted in localStorage and
         // applied immediately by dispatching a change event the spray script
         // listens to (it survives the settings panel being rebuilt on close).
+        // The two panes were native <select>s whose Chromium popup list cannot
+        // be backdrop-filtered, so they are replaced with custom frosted-glass
+        // dropdowns: a button + an in-page popup appended to <body> with
+        // position:fixed (never clipped by the scrollable panel), styled with
+        // the popup glass family (user: 侧边栏 右侧 下拉菜单也要毛玻璃).
         const FX_KEY = 'dsh-desktop-cursor-fx'
         const fxToggle = control.querySelector('input[type=checkbox]')
-        const fxSidebar = control.querySelector('select[data-dsh-fx-sidebar]')
-        const fxCenter = control.querySelector('select[data-dsh-fx-center]')
-        if (fxToggle !== null && fxSidebar !== null && fxCenter !== null) {
+        const fxSidebarRow = control.querySelector('[data-dsh-fx-sidebar-row]')
+        const fxCenterRow = control.querySelector('[data-dsh-fx-center-row]')
+        if (fxToggle !== null && fxSidebarRow !== null && fxCenterRow !== null) {
           let fx = { enabled: true, sidebar: 'star', center: 'water' }
           try {
             const raw = localStorage.getItem(FX_KEY)
@@ -344,16 +362,92 @@ export function alphaControlScript(): string {
               }
             }
           } catch {}
+          // Close whatever frosted dropdown is open (single shared instance
+          // tracked on window, so it survives panel rebuilds and the global
+          // outside-click/scroll/resize listeners only bind once).
+          const closeFxMenu = () => {
+            if (window.__dshFxOpenMenu !== undefined && window.__dshFxOpenMenu !== null) {
+              window.__dshFxOpenMenu.remove()
+              window.__dshFxOpenMenu = null
+            }
+          }
+          if (!window.__dshFxGlobalBound) {
+            window.__dshFxGlobalBound = true
+            document.addEventListener('click', closeFxMenu)
+            addEventListener('scroll', closeFxMenu, true)
+            addEventListener('resize', closeFxMenu)
+          }
+          const OPTIONS = [
+            { value: 'star', label: '星星' },
+            { value: 'water', label: '吐水' },
+            { value: 'snow', label: '雪花' },
+            { value: 'spark', label: '火花' },
+            { value: 'none', label: '关闭' },
+          ]
+          const labelOf = (v) => { const o = OPTIONS.find((x) => x.value === v); return o !== undefined ? o.label : v }
+          // Build one frosted dropdown row for a pane ('sidebar' | 'center').
+          const buildFxDropdown = (pane, row) => {
+            const label = document.createElement('span')
+            label.style.cssText = 'color:var(--dsw-alias-label-secondary);font-size:13px;min-width:52px'
+            label.textContent = pane === 'sidebar' ? '侧边栏' : '右侧'
+            const trigger = document.createElement('button')
+            trigger.type = 'button'
+            trigger.style.cssText = 'flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;width:112px;margin-left:auto;background:rgba(39,46,62,0.45);color:var(--dsw-alias-label-primary);border:1px solid rgba(128,132,142,0.28);border-radius:18px;padding:6px 12px;font-size:13px;cursor:pointer;outline:none'
+            const triggerLabel = document.createElement('span')
+            const chevron = document.createElement('span')
+            chevron.style.cssText = 'font-size:9px;opacity:0.85'
+            chevron.textContent = '▼'
+            trigger.append(triggerLabel, chevron)
+            row.style.cssText = 'display:flex;align-items:center;gap:10px;padding-left:12px'
+            row.append(label, trigger)
+            const refresh = () => { triggerLabel.textContent = labelOf(fx[pane]) }
+            trigger.addEventListener('click', (e) => {
+              e.stopPropagation()
+              if (window.__dshFxOpenMenu !== undefined && window.__dshFxOpenMenu !== null) { closeFxMenu(); return }
+              const menu = document.createElement('div')
+              menu.style.cssText = 'position:fixed;display:flex;flex-direction:column;gap:2px;padding:4px;min-width:140px;background:rgba(39,46,62,0.62);backdrop-filter:blur(24px) saturate(140%);-webkit-backdrop-filter:blur(24px) saturate(140%);border:1px solid rgba(255,255,255,0.14);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.4);z-index:2147483000'
+              OPTIONS.forEach((opt) => {
+                const item = document.createElement('button')
+                item.type = 'button'
+                item.textContent = opt.label
+                item.style.cssText = 'display:block;width:100%;text-align:left;background:transparent;color:var(--dsw-alias-label-primary);border:none;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer'
+                const isSelected = opt.value === fx[pane]
+                // Only the hovered option and the selected option get a tint;
+                // everything else stays transparent (user: 滑动后所有选项都有背景).
+                const paint = (hover) => {
+                  item.style.background = hover
+                    ? (isSelected ? 'rgba(65,118,230,0.44)' : 'rgba(65,118,230,0.26)')
+                    : (isSelected ? 'rgba(65,118,230,0.34)' : 'transparent')
+                }
+                item.addEventListener('mouseenter', () => paint(true))
+                item.addEventListener('mouseleave', () => paint(false))
+                item.style.background = isSelected ? 'rgba(65,118,230,0.34)' : 'transparent'
+                item.addEventListener('click', (ev) => {
+                  ev.stopPropagation()
+                  fx[pane] = opt.value
+                  applyFx()
+                  closeFxMenu()
+                })
+                menu.appendChild(item)
+              })
+              const rect = trigger.getBoundingClientRect()
+              menu.style.left = Math.max(8, Math.min(innerWidth - 148, rect.right - 140)) + 'px'
+              menu.style.top = Math.min(innerHeight - 8, rect.bottom + 6) + 'px'
+              document.body.appendChild(menu)
+              window.__dshFxOpenMenu = menu
+            })
+            return refresh
+          }
+          const refreshSidebar = buildFxDropdown('sidebar', fxSidebarRow)
+          const refreshCenter = buildFxDropdown('center', fxCenterRow)
           const applyFx = () => {
             fxToggle.checked = fx.enabled
-            fxSidebar.value = fx.sidebar
-            fxCenter.value = fx.center
+            refreshSidebar()
+            refreshCenter()
             try { localStorage.setItem(FX_KEY, JSON.stringify(fx)) } catch {}
             window.dispatchEvent(new CustomEvent('dsh-cursor-fx-change', { detail: { enabled: fx.enabled, sidebar: fx.sidebar, center: fx.center } }))
           }
           fxToggle.addEventListener('change', () => { fx.enabled = fxToggle.checked; applyFx() })
-          fxSidebar.addEventListener('change', () => { fx.sidebar = fxSidebar.value; applyFx() })
-          fxCenter.addEventListener('change', () => { fx.center = fxCenter.value; applyFx() })
           applyFx()
         }
       // Mount inside the Theme Settings panel's dedicated opacity slot so the

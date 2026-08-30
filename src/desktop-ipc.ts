@@ -12,6 +12,7 @@
 import { clipboard, dialog, ipcMain, nativeImage, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { gitStatus } from './git-status.ts'
+import { isHexColor } from './glass.ts'
 import type { PtyRegistry } from './pty-registry.ts'
 import { removeStoredWallpaper, storeWallpaper, wallpaperDataUrl } from './wallpaper.ts'
 
@@ -44,6 +45,16 @@ export interface DesktopIpcContext {
   getWallpaperFile: () => string | null
   /** Set the wallpaper file and persist glass settings. */
   setWallpaperFile: (file: string | null) => void
+  /** The current solid-color background (lowercase #rrggbb), or null. */
+  getWallpaperColor: () => string | null
+  /** Set (or clear with null) the solid-color background and persist. */
+  setWallpaperColor: (color: string | null) => void
+  /** Folder the auto-rotate cycles image wallpapers from, or null. */
+  getWallpaperFolder: () => string | null
+  /** Auto-rotate state. */
+  getWallpaperRotate: () => { enabled: boolean; minutes: number }
+  /** Set auto-rotate (enabled + minutes, optional new folder) and persist. */
+  setWallpaperRotate: (enabled: boolean, minutes: number, folder: string | null) => void
   /** Restart the dsh web server in place, reloading the hosted window. */
   restartWebServer: () => Promise<{ ok: true; url: string } | { ok: false; message: string }>
 }
@@ -58,6 +69,9 @@ function applyWallpaperFile(ctx: DesktopIpcContext, srcPath: string): { file: st
   const stored = storeWallpaper(ctx.userData, srcPath)
   if ('error' in stored) return stored
   ctx.setWallpaperFile(stored.file)
+  // An image wallpaper takes precedence over the solid-color background; the
+  // persisted color is cleared so a later "移除" returns to the built-in tone.
+  ctx.setWallpaperColor(null)
   return { file: stored.file, url: stored.url, srcPath }
 }
 
@@ -330,7 +344,37 @@ export function registerDesktopIpc(ctx: DesktopIpcContext): void {
     return { ok: true }
   })
   ipcMain.handle('dsh:wallpaper-get', () => {
-    return { url: wallpaperDataUrl(ctx.userData, ctx.getWallpaperFile()), file: ctx.getWallpaperFile() }
+    return {
+      url: wallpaperDataUrl(ctx.userData, ctx.getWallpaperFile()),
+      file: ctx.getWallpaperFile(),
+      color: ctx.getWallpaperColor(),
+      folder: ctx.getWallpaperFolder(),
+      rotate: ctx.getWallpaperRotate(),
+    }
+  })
+  // Solid-color background: set a flat #rrggbb (or null to clear it back to
+  // the built-in tone). The renderer clears the image wallpaper first, so the
+  // stored state is exactly one background choice at a time.
+  ipcMain.handle('dsh:wallpaper-set-color', (_event, color: unknown) => {
+    if (color === null || color === undefined) {
+      ctx.setWallpaperColor(null)
+      return { ok: true }
+    }
+    if (!isHexColor(color)) return { error: 'invalid color' }
+    ctx.setWallpaperColor(color)
+    return { ok: true }
+  })
+  // Auto-rotate: { enabled, minutes, folder }. `folder` is optional (kept as
+  // the rotation source when supplied); minutes is clamped to 1..1440.
+  ipcMain.handle('dsh:wallpaper-set-rotate', (_event, opts: unknown) => {
+    const o = opts !== null && typeof opts === 'object' ? (opts as Record<string, unknown>) : {}
+    const enabled = o.enabled === true
+    const minutes = typeof o.minutes === 'number' && Number.isFinite(o.minutes)
+      ? Math.min(1440, Math.max(1, Math.round(o.minutes)))
+      : 30
+    const folder = typeof o.folder === 'string' && o.folder !== '' ? o.folder : null
+    ctx.setWallpaperRotate(enabled, minutes, folder)
+    return { ok: true }
   })
   // Terminal state persistence IPC: the injected panel remembers each
   // project's terminal tabs (names + working directories) across launches.

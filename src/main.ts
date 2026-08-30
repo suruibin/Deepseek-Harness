@@ -93,13 +93,25 @@ const initialGlass = loadGlassSettings(userData)
 let windowAlpha = initialGlass.alpha
 let windowTheme: GlassTheme = initialGlass.theme
 let wallpaperFile: string | null = initialGlass.wallpaper
+let wallpaperColor: string | null = initialGlass.wallpaperColor ?? null
+let wallpaperFolder: string | null = initialGlass.wallpaperFolder ?? null
+let wallpaperRotate: boolean = initialGlass.wallpaperRotate === true
+let wallpaperRotateMinutes: number = initialGlass.wallpaperRotateMinutes ?? 30
 // xterm UMD + CSS are ~1MB of static text read at injection; cached after the
 // first load so repeated page navigations do not re-read them from disk.
 let xtermAssets: { js: string; css: string } | null = null
 
-/** Persist the current glass settings (alpha, theme, wallpaper). */
+/** Persist the current glass settings (alpha, theme, wallpaper + solid color / auto-rotate). */
 function saveGlass(): void {
-  saveGlassSettings(userData, { alpha: windowAlpha, theme: windowTheme, wallpaper: wallpaperFile })
+  saveGlassSettings(userData, {
+    alpha: windowAlpha,
+    theme: windowTheme,
+    wallpaper: wallpaperFile,
+    wallpaperColor,
+    wallpaperFolder,
+    wallpaperRotate,
+    wallpaperRotateMinutes,
+  })
 }
 
 function iconPath(): string {
@@ -655,6 +667,19 @@ if (!app.requestSingleInstanceLock()) {
     getWallpaperFile: () => wallpaperFile,
     setWallpaperFile: (file: string | null) => {
       wallpaperFile = file
+      saveGlass()
+    },
+    getWallpaperColor: () => wallpaperColor,
+    setWallpaperColor: (color: string | null) => {
+      wallpaperColor = color
+      saveGlass()
+    },
+    getWallpaperFolder: () => wallpaperFolder,
+    getWallpaperRotate: () => ({ enabled: wallpaperRotate, minutes: wallpaperRotateMinutes }),
+    setWallpaperRotate: (enabled: boolean, minutes: number, folder: string | null) => {
+      wallpaperRotate = enabled
+      wallpaperRotateMinutes = minutes
+      if (folder !== undefined && folder !== null) wallpaperFolder = folder
       saveGlass()
     },
     restartWebServer: () => restartWebServer({
