@@ -756,6 +756,32 @@ export function ambientStyleScript(): string {
       // (上下文已用, JObwrW_panel) rides the same variable via
       // --dsw-specific-menu and joins the family.
       '[class*=\"_menu\"], [class*=\"_sideTop_\"], [class*=\"JObwrW_panel\"], [class*=\"_list_\"], [class*=\"_submenu_\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
+      // Model-picker provider title rows (DeepSeek / Ollama / 智谱 GLM /
+      // FreeToken, _7KE1Ra_groupTitle): DSH paints them with an OPAQUE
+      // rgb(39,46,62) band. They sit INSIDE the blurred menu, so a
+      // backdrop-filter of their own never renders (Chromium drops nested
+      // blur — see the composer-card note above); joining the popup family
+      // var only stacked a second tint on the menu's frost and still read as
+      // a solid slab (user: provider 标题行背景是实体的 我需要毛玻璃效果).
+      // Transparent instead: the header text sits directly on the menu's
+      // frosted glass, which IS the 毛玻璃 for these rows.
+      '[class*=\"_7KE1Ra_groupTitle\"] { background: transparent !important; }',
+      // Option BUTTONS (_7KE1Ra_option, 239x38 rounded chips): after the
+      // title rows went flat the chips were the last blocks standing — each
+      // option still read as a rectangular slab on the frosted list (user:
+      // 还是有矩形). Flat too: transparent at rest so every model name sits
+      // directly on the menu's 毛玻璃, selection stays marked by the
+      // _7KE1Ra_check icon; hover gets a light glass chip back so the
+      // pointer still has feedback without painting the list at rest.
+      '[class*=\"_7KE1Ra_option\"] { background: transparent !important; }',
+      '[class*=\"_7KE1Ra_option\"]:hover { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; }',
+      // The family selector above substring-matches _7KE1Ra_optionCopy too —
+      // the inner label span DSH puts inside every option button. It got the
+      // same tint with SQUARE corners (border-radius 0), painting a
+      // visible rectangle behind each option label (user: Qwen3.6 35B A3B
+      // (FreeToken) 背景有矩形 要去掉). Keep the copy span transparent so
+      // even the hover chip shows a clean rounded block, not a square one.
+      '[class*=\"_7KE1Ra_optionCopy\"] { background: transparent !important; }',
       // 会话行 "..." 操作菜单(p-xYUq_actions / p-xYUq_action, _8_XoUG_action)与
       // tool-call 消息操作按钮(_action_178r4_53)不含 _menu 后缀,未被上面弹出层规则
       // 覆盖,DSH 用实心中性色绘制。并入弹出层毛玻璃家族,与下拉菜单同族。
