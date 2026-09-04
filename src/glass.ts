@@ -57,23 +57,25 @@ export const DEFAULT_THEME: GlassTheme = 'system'
  * The theme's defaults are neutral grays
  * (`--dsw-static-neutral-bluish-*`); these override them with the same
  * blue-tinted family as the window glass so popups read as blue glass layers
- * instead of gray slabs. Surfaces stay opaque (no alpha) for readability over
- * the translucent canvas — only the large canvas layers get the alpha tint.
- * Tooltip backgrounds stay dark in both themes because tooltip text is always
- * white; the light-theme value below is therefore a dark blue, not a pale one.
+ * instead of gray slabs. The former solid rgb(39,46,62) surfaces (layer-3,
+ * module platform, menus, floating hover, ghost-active) now ride the popup
+ * family variable, so the 弹出层 slider (主题设置 → 界面毛玻璃) drives their
+ * tint from near-clear to solid. Tooltip backgrounds stay dark in both themes
+ * because tooltip text is always white; the light-theme value below is
+ * therefore a dark blue, not a pale one.
  */
 const SURFACE_DARK: Record<string, string> = {
   '--dsw-alias-bg-layer-2': 'rgb(32, 38, 52)', // dialog panels, pills
-  '--dsw-alias-bg-layer-3': 'rgb(39, 46, 62)', // plugin/config cards, config inputs
-  '--dsw-alias-bg-module-platform': 'rgb(39, 46, 62)', // appearance selected cube, badges
-  '--dsw-specific-menu': 'rgb(39, 46, 62)', // dropdown menus
+  '--dsw-alias-bg-layer-3': 'var(--dsh-glass-popup-bg, rgba(39, 46, 62, 0.07))', // plugin/config cards, config inputs
+  '--dsw-alias-bg-module-platform': 'var(--dsh-glass-popup-bg, rgba(39, 46, 62, 0.07))', // appearance selected cube, badges
+  '--dsw-specific-menu': 'var(--dsh-glass-popup-bg, rgba(39, 46, 62, 0.07))', // dropdown menus
   '--dsw-alias-tooltip-bg': 'rgba(46, 54, 73, 0.62)', // tooltips
   '--dsw-specific-input-major': 'rgb(58, 68, 90)', // input buttons, image viewer (brighter)
   '--dsw-specific-login-input': 'rgb(52, 62, 84)', // login fields (brighter)
   '--dsw-alias-button-elevated-fill': 'rgb(32, 38, 52)', // "new session" button, rename input
-  '--dsw-alias-button-floating-hover': 'rgb(39, 46, 62)', // its hover state
+  '--dsw-alias-button-floating-hover': 'var(--dsh-glass-popup-bg, rgba(39, 46, 62, 0.07))', // its hover state
   '--dsw-alias-button-floating-fill': 'rgb(32, 38, 52)', // scroll-to-bottom, drawer handle
-  '--dsw-alias-button-ghost-active-fill': 'rgb(39, 46, 62)', // message bubbles, status badges
+  '--dsw-alias-button-ghost-active-fill': 'var(--dsh-glass-popup-bg, rgba(39, 46, 62, 0.07))', // message bubbles, status badges
   '--dsw-alias-button-primary-hover': 'rgb(238, 241, 249)', // primary (white) button hover
   '--dsw-alias-button-tool-bar-fill': 'rgba(52, 65, 91, 0.55)', // toolbar buttons
   '--dsw-alias-button-tool-bar-hover': 'rgba(52, 65, 91, 0.68)',
@@ -782,10 +784,13 @@ export function ambientStyleScript(): string {
       // (FreeToken) 背景有矩形 要去掉). Keep the copy span transparent so
       // even the hover chip shows a clean rounded block, not a square one.
       '[class*=\"_7KE1Ra_optionCopy\"] { background: transparent !important; }',
-      // 会话行 "..." 操作菜单(p-xYUq_actions / p-xYUq_action, _8_XoUG_action)与
-      // tool-call 消息操作按钮(_action_178r4_53)不含 _menu 后缀,未被上面弹出层规则
-      // 覆盖,DSH 用实心中性色绘制。并入弹出层毛玻璃家族,与下拉菜单同族。
-      '[class*="p-xYUq_action"], [class*="_8_XoUG_action"], [class*="_action_178r4_53"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
+      // 会话行 "..." 操作菜单按钮(p-xYUq_action/_8_XoUG_action)与
+      // tool-call 消息操作按钮(_action_178r4_53)并入弹出层毛玻璃家族,与下拉菜单同族。
+      // 注意 :not 排除复数容器 p-xYUq_actions/_8_XoUG_actions——子串选择器会误命中
+      // 整行容器,给 24px 高的操作行/时间行(02:03、tok/s 统计)整条加上 blur+saturate,
+      // 壁纸被磨砂成一条可见矩形带(用户: 输出框界面统计行与对话时间 背景有矩形 我要全透明)。
+      '[class*="p-xYUq_action"]:not([class*="p-xYUq_actions"]), [class*="_8_XoUG_action"]:not([class*="_8_XoUG_actions"]), [class*="_action_178r4_53"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
+      '[class*="p-xYUq_actions"], [class*="_8_XoUG_actions"] { background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }',
       // 原生/自定义 tooltip:DSH 用 --dsw-alias-tooltip-bg(实心)绘制且文字恒白,该别名
       // 已改为半透明(见 SURFACE_DARK/LIGHT)。这里给 tooltip 元素补上弹出层模糊,做成
       // 毛玻璃;alpha 取 0.62 保证白字仍清晰可读。浏览器原生 title 气泡无法用 CSS 上玻璃。
