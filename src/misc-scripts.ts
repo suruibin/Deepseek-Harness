@@ -557,7 +557,7 @@ export function featureControlScript(): string {
         cycleControl.innerHTML =
           '<span style="color:var(--dsw-alias-label-secondary);font-size:13px" data-dsh-label-cycle></span>' +
           '<div style="display:flex;align-items:center;gap:6px;margin-left:auto">' +
-            '<input type="number" min="1" max="600" step="1" data-dsh-cycle-input style="width:64px;background:rgb(39,46,62);color:var(--dsw-alias-label-primary);border:none;border-radius:10px;padding:6px 8px;font-size:13px;text-align:center;outline:none">' +
+            '<input type="number" min="1" max="600" step="1" data-dsh-cycle-input style="width:64px;background:var(--dsh-glass-popup-bg,rgba(39,46,62,0.07));color:var(--dsw-alias-label-primary);border:none;border-radius:10px;padding:6px 8px;font-size:13px;text-align:center;outline:none">' +
             '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:16px" data-dsh-cycle-unit></span>' +
           '</div>'
         const sync = (sel, text) => {
