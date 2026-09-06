@@ -272,14 +272,6 @@ export function childExited(child: Pick<ChildProcess, 'exitCode' | 'signalCode'>
  */
 const DSH_ROOT_MARKER = '__DSH_BOOT__'
 
-/**
- * The plain-text body `dsh web` (0.1.2-rc.1+) answers unauthenticated probes
- * with: its token fence. A 401 carrying this signature proves the same thing
- * the 200+marker probe does — a live Harness instance owns the port — without
- * needing a token, which only the spawner sees on its ready line.
- */
-const DSH_FENCE_SNIPPET = 'dsh web authentication required'
-
 export interface ExistingServerOptions {
   env: NodeJS.ProcessEnv
   /** Injectable fetch for tests; defaults to the global fetch. */
@@ -302,11 +294,7 @@ export interface ExistingServerOptions {
  * Candidate order: `DSH_DESKTOP_GUI_URL` (an explicit UI address, e.g. the
  * user's always-on GUI instance) → `DSH_DESKTOP_GUI_PORT` (default `3080`,
  * `dsh web`'s default listen port). A candidate counts as an existing instance
- * when it answers HTTP 200 AND its HTML carries the Harness boot marker, or —
- * for 0.1.2-rc.1+'s token-fence model — when it answers 401 with the dsh
- * fence signature (the root never serves unauthenticated HTML there, so a
- * marker check alone would misread a live instance as absent and spawn a
- * second one).
+ * only when it answers HTTP 200 AND its HTML carries the Harness boot marker.
  * @param options - env and injectable fetch.
  * @returns the existing instance's URL, or undefined when none is reachable.
  */
@@ -326,12 +314,6 @@ export async function detectExistingServer(options: ExistingServerOptions): Prom
     }
     try {
       const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) })
-      if (response.status === 401) {
-        // 0.1.2-rc.1+：根路径是 token 栅栏，401 + dsh 签名 body 同样证明实例存在。
-        const text = await response.text()
-        if (text.includes(DSH_FENCE_SNIPPET)) return url
-        continue
-      }
       if (!response.ok) continue
       // Read the whole payload: the boot marker sits inside the bundled
       // client scripts far past the document head, so a small head window
@@ -343,47 +325,6 @@ export async function detectExistingServer(options: ExistingServerOptions): Prom
     }
   }
   return undefined
-}
-
-export interface ExternalTokenOptions {
-  env: NodeJS.ProcessEnv
-  /** Injectable execFile for tests; defaults to the real one. */
-  execFileImpl?: typeof execFile
-  /** journalctl deadline; defaults to 3s. */
-  timeoutMs?: number
-}
-
-/**
- * Resolve a launch token for an externally-spawned `dsh web` (e.g. the user's
- * systemd --user resident service), so a reused instance can still seed the
- * window's auth cookie: navigating to `/?token=<t>` answers 303 + Set-Cookie.
- * The token is random per boot and only appears on the ready line, so the
- * sources are, in order: `DSH_WEB_TOKEN` (explicit pin), then the last
- * `token=` occurrence in the user journal for `DSH_WEB_UNIT` (default
- * `dsh-web`) over the trailing 48h. Every failure resolves undefined — reuse
- * detection is independent of this, and a missing token only means the window
- * lands on dsh's 401 notice instead of silently spawning a second instance.
- * @param options - env and injectable execFile.
- * @returns the token, or undefined when none is pinned or found.
- */
-export async function resolveExternalLaunchToken(options: ExternalTokenOptions): Promise<string | undefined> {
-  const explicit = options.env.DSH_WEB_TOKEN
-  if (explicit !== undefined && explicit !== '') return explicit
-  const unit = options.env.DSH_WEB_UNIT ?? 'dsh-web'
-  const execFileImpl = options.execFileImpl ?? execFile
-  const timeoutMs = options.timeoutMs ?? 3_000
-  try {
-    const stdout = await new Promise<string>((resolve, reject) => {
-      execFileImpl('journalctl', ['--user', '-u', unit, '--since', '-48h', '-o', 'cat'], { timeout: timeoutMs }, (error, result) => {
-        if (error !== null || typeof result !== 'string') reject(error ?? new Error('journalctl produced no output'))
-        else resolve(result)
-      })
-    })
-    const matches = [...stdout.matchAll(/token=([A-Za-z0-9_-]+)/g)]
-    return matches.length > 0 ? matches[matches.length - 1]?.[1] : undefined
-  } catch {
-    return undefined
-  }
 }
 
 /**

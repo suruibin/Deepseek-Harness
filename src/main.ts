@@ -18,7 +18,7 @@ import { alphaControlScript, ambientStyleScript, glassGuardScript, glassWindowOp
 import { featureControlScript, glassControlsScript, inputHistoryScript, themeSettingsScript, whaleSprayScript } from './misc-scripts.ts'
 import { terminalScript } from './terminal-scripts.ts'
 import { wallpaperControlScript, wallpaperLayerScript } from './wallpaper-scripts.ts'
-import { detectExistingServer, readDshVersion, resolveExternalLaunchToken, resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
+import { detectExistingServer, readDshVersion, resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
 import { restartWebServer, spawnReaper, STDERR_TAIL_LIMIT } from './server-restart.ts'
 import { mergePlugins, pluginsCssScript, readPluginDir } from './plugins.ts'
 import { PtyRegistry } from './pty-registry.ts'
@@ -570,16 +570,11 @@ async function boot(): Promise<void> {
   try {
     const existing = await detectExistingServer({ env: process.env })
     if (existing !== undefined) {
-      // 0.1.2-rc.1+ 的 token 栅栏：复用窗口也要认证播种。token 只在 ready 行
-      // （自起实例已解析；外部实例从 journal 取），拿不到就落 dsh 的 401 提示页，
-      // 绝不起第二个实例。
-      const externalToken = await resolveExternalLaunchToken({ env: process.env })
-      const navUrl = externalToken !== undefined ? new URL(`/?token=${externalToken}`, existing) : existing
-      console.log(`[dsh-desktop] 检测到已运行的 dsh web 实例 ${existing.href}，直接复用（不启动第二个实例，避免并发写入会话存储）${externalToken !== undefined ? `，已取得 launch token 用于认证播种` : '；未取得 launch token（可用 DSH_WEB_TOKEN / DSH_WEB_UNIT 指定），窗口将显示 dsh 认证提示页'}`)
+      console.log(`[dsh-desktop] 检测到已运行的 dsh web 实例 ${existing.href}，直接复用（不启动第二个实例，避免并发写入会话存储）`)
       serverUrl = existing
       await staleCookiesCleared
       Menu.setApplicationMenu(null)
-      createWindow(navUrl)
+      createWindow(existing)
       createTray()
       if (pendingFocus) {
         pendingFocus = false

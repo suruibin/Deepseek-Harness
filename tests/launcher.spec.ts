@@ -6,7 +6,6 @@ import {
   detectExistingServer,
   parseReadyLine,
   readDshVersion,
-  resolveExternalLaunchToken,
   resolveWebLaunch,
   waitForHttpOk,
   waitForReadyLine,
@@ -305,48 +304,6 @@ describe('detectExistingServer', () => {
     })
     const url = await detectExistingServer({ env: { DSH_DESKTOP_GUI_URL: 'http://127.0.0.1:9999/' }, fetchImpl, timeoutMs: 10 })
     expect(url?.href).toBe('http://127.0.0.1:3080/')
-  })
-
-  it('reuses an instance behind the 0.1.2-rc.1 token fence (401 + dsh signature)', async () => {
-    // rc.1+ answers unauthenticated root probes with a plain-text 401; that is
-    // still proof a live instance owns the port. Treating it as absent would
-    // spawn a second instance and corrupt the shared session log.
-    const fetchImpl = vi.fn(async () => new Response('dsh web authentication required; reopen the URL printed by dsh web.', { status: 401 }))
-    const url = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
-    expect(url?.href).toBe('http://127.0.0.1:3080/')
-  })
-
-  it('ignores a 401 that lacks the dsh fence signature', async () => {
-    const fetchImpl = vi.fn(async () => new Response('unauthorized', { status: 401 }))
-    const url = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
-    expect(url).toBeUndefined()
-  })
-})
-
-describe('resolveExternalLaunchToken', () => {
-  it('prefers an explicit DSH_WEB_TOKEN over the journal', async () => {
-    const execFileImpl = vi.fn((_f: unknown, _a: unknown, _o: unknown, cb: (e: Error | null, o?: string) => void) => cb(null, 'token=SHOULD_NOT_BE_READ'))
-    const token = await resolveExternalLaunchToken({ env: { DSH_WEB_TOKEN: 'pinned' }, execFileImpl: execFileImpl as never })
-    expect(token).toBe('pinned')
-    expect(execFileImpl).not.toHaveBeenCalled()
-  })
-
-  it('takes the last token from the journal ready lines', async () => {
-    const journal = [
-      'dsh web: http://127.0.0.1:3080/?token=first_token-1',
-      'some other log line',
-      'dsh web: http://127.0.0.1:3080/?token=second_token-2',
-    ].join('\n')
-    const execFileImpl = vi.fn((_f: unknown, _a: unknown, _o: unknown, cb: (e: Error | null, o?: string) => void) => cb(null, journal))
-    const token = await resolveExternalLaunchToken({ env: {}, execFileImpl: execFileImpl as never })
-    expect(token).toBe('second_token-2')
-  })
-
-  it('returns undefined when journalctl fails or finds no token', async () => {
-    const failing = vi.fn((_f: unknown, _a: unknown, _o: unknown, cb: (e: Error | null, o?: string) => void) => cb(new Error('no journal')))
-    expect(await resolveExternalLaunchToken({ env: {}, execFileImpl: failing as never })).toBeUndefined()
-    const empty = vi.fn((_f: unknown, _a: unknown, _o: unknown, cb: (e: Error | null, o?: string) => void) => cb(null, 'nothing here'))
-    expect(await resolveExternalLaunchToken({ env: {}, execFileImpl: empty as never })).toBeUndefined()
   })
 })
 
