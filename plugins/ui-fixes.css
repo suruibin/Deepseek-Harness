@@ -5,7 +5,9 @@
  * 2. "查看已归档" header button: never shown. Its title attribute is only
  *    set in some renders (empty on first boot) and its position differs
  *    between the expanded header and the collapsed rail, but in both it is
- *    the classless first child of .bhn1Oq_sectionHeader.
+ *    the classless first child of .bhn1Oq_sectionHeader. rc.1 removed the
+ *    native button, so our injected #dsh-sm-archive-btn becomes first-child
+ *    — exclude it explicitly or the rule kills our own icon.
  * 3. Trace view "工具" kind tag: dark brown chip → light yellow with a dark
  *    amber label so it stays readable (label/icon set their own color).
  */
@@ -23,7 +25,7 @@
   margin-right: 38px !important;
 }
 
-.bhn1Oq_sectionHeader > button:first-child {
+.bhn1Oq_sectionHeader > button:first-child:not(#dsh-sm-archive-btn) {
   display: none !important;
 }
 

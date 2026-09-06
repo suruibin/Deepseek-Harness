@@ -478,7 +478,7 @@ export function inputHistoryScript(): string {
     }
     const attach = () => {
       const input = findInput()
-      if (input !== null && input.dataset.dshHistory === undefined) {
+      if (input != null && input.dataset.dshHistory === undefined) {
         input.dataset.dshHistory = '1'
         input.addEventListener('keydown', onKey)
       }
@@ -496,7 +496,7 @@ export function inputHistoryScript(): string {
       dispose: () => {
         obs.disconnect()
         const input = findInput()
-        if (input !== null) input.removeEventListener('keydown', onKey)
+        if (input != null) input.removeEventListener('keydown', onKey)
       },
     }
   })()`

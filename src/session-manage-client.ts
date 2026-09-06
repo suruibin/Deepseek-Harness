@@ -373,12 +373,36 @@ export function sessionManageScript(): string {
       updateSelectionUI()
     }
     // 行级直接多选：勾选框 + 行点击即切换选中（无需显式多选模式）。
+    let panelStyleEl = null
+    const ensurePanelStyle = function () {
+      if (panelStyleEl !== null && document.head.contains(panelStyleEl)) return
+      panelStyleEl = document.createElement('style')
+      panelStyleEl.setAttribute('data-dsh-sm', 'panel')
+      panelStyleEl.textContent = [
+        // 毛玻璃复选框：原生 checkbox 在暗玻璃卡片上会渲染成深色实心块，改为
+        // appearance:none 自绘 —— 半透明磨砂底 + 亮边 + 选中态蓝色对勾。
+        'input[data-dsh-sm-cb]{appearance:none;-webkit-appearance:none;appearance:none;',
+        'flex-shrink:0;width:15px;height:15px;margin:0;border-radius:4px;cursor:pointer;',
+        'background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.32);',
+        'backdrop-filter:blur(8px) saturate(140%);-webkit-backdrop-filter:blur(8px) saturate(140%);',
+        'box-shadow:inset 0 1px 2px rgba(255,255,255,0.10);',
+        'transition:background 150ms ease,border-color 150ms ease}',
+        'input[data-dsh-sm-cb]:hover{background:rgba(255,255,255,0.20)}',
+        'input[data-dsh-sm-cb]:checked{background-color:#4c9fff;border-color:#4c9fff;',
+        // 注意：此脚本是多层字符串嵌套注入页面的，data-URI 内严禁出现任何引号字符，
+        // 一律用 %27 编码，否则外层字符串提前截断 → 整个注入脚本 SyntaxError 全灭。
+        'background-image:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M2.5 6.5l2.2 2.2L9.5 3.9%27 fill=%27none%27 stroke=%27white%27 stroke-width=%271.8%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E");',
+        'background-size:11px 11px;background-position:center;background-repeat:no-repeat}',
+      ].join('')
+      document.head.appendChild(panelStyleEl)
+    }
     const attachRowSelection = function (row, id) {
       const cb = document.createElement('input')
       cb.type = 'checkbox'
       cb.checked = panelState.selectedIds[id] === true
       cb.setAttribute('data-dsh-sm-cb', '')
-      cb.style.cssText = 'flex-shrink:0;width:15px;height:15px;accent-color:#4c9fff;cursor:pointer'
+      ensurePanelStyle()
+      cb.style.cssText = 'cursor:pointer'
       cb.addEventListener('change', function (event) {
         if (event.stopPropagation !== undefined) event.stopPropagation()
         toggleSelect(id)
@@ -778,10 +802,10 @@ export function sessionManageScript(): string {
       const card = document.createElement('div')
       card.style.cssText = 'width:min(620px,calc(100vw - 48px));height:560px;display:flex;flex-direction:column;border-radius:16px;padding:20px;background:var(--dsh-glass-popup-bg,rgba(39,46,62,0.07));backdrop-filter:blur(var(--dsh-glass-popup-blur,40px)) saturate(140%);-webkit-backdrop-filter:blur(var(--dsh-glass-popup-blur,40px)) saturate(140%);color:var(--dsh-alias-label-primary-inverted,#f2f3f5);box-shadow:var(--dsw-shadow-lv3,0 8px 24px rgba(0,0,0,0.35));border:1px solid rgba(255,255,255,0.12)'
       const header = document.createElement('div')
-      header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-shrink:0'
+      header.style.cssText = 'position:relative;display:flex;align-items:center;justify-content:flex-end;margin-bottom:12px;flex-shrink:0'
       const titleEl = document.createElement('div')
       titleEl.textContent = '已归档会话'
-      titleEl.style.cssText = 'font-size:16px;line-height:24px;font-weight:600'
+      titleEl.style.cssText = 'position:absolute;left:50%;transform:translateX(-50%);font-size:16px;line-height:24px;font-weight:600'
       const actions = document.createElement('div')
       actions.style.cssText = 'display:flex;align-items:center;gap:8px'
       const restartBtn = document.createElement('button')
@@ -826,7 +850,7 @@ export function sessionManageScript(): string {
       document.body.appendChild(overlay)
       renderPanelBody(body)
     }
-    const ARCHIVE_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M2 5.5h12v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-8Z" stroke="currentColor" stroke-width="1.2"/><path d="M2 5.5 3.2 2.8a1 1 0 0 1 .9-.6h7.8a1 1 0 0 1 .9.6L14 5.5" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 9h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>'
+    const ARCHIVE_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M2 5.5h12v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-8Z" stroke="currentColor" stroke-width="1.2"/><path d="M2 5.5 3.2 2.8a1 1 0 0 1 .9-.6h7.8a1 1 0 0 1 .9.6L14 5.5" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 9h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>'
 
     // ---------- 已归档按钮：毛玻璃悬浮提示（对齐搜索按钮的 frosted bubble） ----------
     let archiveTipEl = null
@@ -836,7 +860,8 @@ export function sessionManageScript(): string {
       archiveTipStyleEl = document.createElement('style')
       archiveTipStyleEl.setAttribute('data-dsh-sm', 'archive-tip')
       archiveTipStyleEl.textContent = [
-        '#dsh-sm-archive-btn[data-dsh-sm-collapsed="1"]{display:none !important}',
+        // rc.2 时代折叠栏由 dsh 原生归档按钮接管，壳按钮需让位隐藏；rc.1 已删除
+        // 原生按钮，让位规则只会造成「首次折叠图标消失」，故不再隐藏。
         '#dsh-sm-archive-tip{position:fixed;z-index:2200;pointer-events:none;white-space:nowrap;',
         'padding:3px 7px;border-radius:8px;font-size:13px;line-height:20px;color:#fff;',
         'background:rgba(15,17,23,0.35);',
@@ -882,44 +907,74 @@ export function sessionManageScript(): string {
       } catch { /* 忽略 */ }
     }
 
+    const repositionArchiveBtn = function (btn, header, foot, collapsed) {
+      if (header !== null) {
+        btn.innerHTML = ARCHIVE_ICON_SVG
+        btn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-right:4px;border:none;border-radius:8px;background:transparent;cursor:pointer;color:rgb(173,178,184);flex-shrink:0'
+        const label = header.querySelector('[class*="sectionLabel"]')
+        if (label !== null && label.parentNode !== null) label.parentNode.insertBefore(btn, label)
+        else header.insertBefore(btn, header.firstChild)
+        return
+      }
+      if (foot !== null) {
+        // 折叠态：footArea 居中图标栏（rc.1 collapsed CSS 保证可见），仅图标；
+        // 展开态兜底（header 缺失）：图标 + 文本。
+        if (collapsed) {
+          btn.innerHTML = ARCHIVE_ICON_SVG
+          btn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin:0;border:none;border-radius:8px;background:transparent;cursor:pointer;color:var(--dsw-alias-label-secondary,#888);flex-shrink:0'
+        } else {
+          btn.innerHTML = ARCHIVE_ICON_SVG + '<span>查看已归档</span>'
+          btn.style.cssText = 'display:flex;align-items:center;gap:6px;margin:6px 10px;padding:6px 10px;border:none;border-radius:8px;cursor:pointer;font:inherit;font-size:12px;color:var(--dsw-alias-label-secondary,#888);background:transparent'
+        }
+        foot.appendChild(btn)
+      }
+    }
     const ensurePanelButton = function () {
       try {
-        if (document.getElementById('dsh-sm-archive-btn') !== null) { syncArchiveRail(); return }
-        const btn = document.createElement('button')
-        btn.id = 'dsh-sm-archive-btn'
-        btn.type = 'button'
-        btn.setAttribute('aria-label', '查看已归档')
-        btn.innerHTML = ARCHIVE_ICON_SVG
-        btn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;margin-right:4px;border:none;border-radius:6px;background:transparent;cursor:pointer;color:rgb(173,178,184);flex-shrink:0'
-        btn.addEventListener('mouseenter', function () { showArchiveTip(btn) }, false)
-        btn.addEventListener('mouseleave', hideArchiveTip, false)
-        btn.addEventListener('click', function () { hideArchiveTip(); openPanel() }, false)
-        // 优先：在工作区 section header 的「工作区」标签前插入图标入口。
-        const headers = document.querySelectorAll('[class*="sectionHeader"]')
-        for (let i = 0; i < headers.length; i += 1) {
-          const h = headers[i]
-          if (!(h instanceof HTMLElement) || h.offsetParent === null) continue
-          const t = (h.textContent !== null ? h.textContent : '').trim()
-          if (t.indexOf('工作区') === 0 || t.indexOf('Workspace') === 0) {
-            const label = h.querySelector('[class*="sectionLabel"]')
-            if (label !== null && label.parentNode !== null) label.parentNode.insertBefore(btn, label)
-            else h.insertBefore(btn, h.firstChild)
-            return
+        // 目标位置（确定性）：展开且工作区 header 可见 → header「工作区」标签前；
+        // 折叠或 header 不可见 → footArea（rc.1 折叠 CSS 明确保留其可见）。
+        // 每次都校验实际位置，不符则搬回 —— 不再因按钮已存在而跳过，
+        // 否则首次折叠后按钮随列表一起被隐藏（首次折叠图标消失的根因）。
+        const collapsed = document.querySelector('[class*="hHd-Xa_collapsed"]') !== null
+        let header = null
+        if (!collapsed) {
+          const headers = document.querySelectorAll('[class*="sectionHeader"]')
+          for (let i = 0; i < headers.length; i += 1) {
+            const h = headers[i]
+            if (h instanceof HTMLElement && h.offsetParent !== null) {
+              const t = (h.textContent !== null ? h.textContent : '').trim()
+              if (t.indexOf('工作区') === 0 || t.indexOf('Workspace') === 0) { header = h; break }
+            }
           }
         }
-        // 兜底：侧栏底部 footArea（保持原文本按钮）。
         let foot = null
         const footCandidates = document.querySelectorAll('[class*="footArea"]')
         for (let i = 0; i < footCandidates.length; i += 1) {
           const el = footCandidates[i]
           if (el instanceof HTMLElement && el.offsetParent !== null) { foot = el; break }
         }
-        if (foot !== null) {
-          btn.innerHTML = '查看已归档'
-          btn.style.cssText = 'display:flex;align-items:center;gap:6px;margin:6px 10px;padding:6px 10px;border:none;border-radius:8px;cursor:pointer;font:inherit;font-size:12px;color:var(--dsw-alias-label-secondary,#888);background:transparent'
-          foot.appendChild(btn)
+        const existing = document.getElementById('dsh-sm-archive-btn')
+        if (existing !== null) {
+          const okHeader = header !== null && existing.parentElement !== null && (existing.parentElement === header || existing.parentElement.parentNode === header)
+          const okFoot = header === null && foot !== null && existing.parentElement === foot
+          if (!okHeader && !okFoot) repositionArchiveBtn(existing, header, foot, collapsed)
+          syncArchiveRail()
           return
         }
+        const btn = document.createElement('button')
+        btn.id = 'dsh-sm-archive-btn'
+        btn.type = 'button'
+        btn.setAttribute('aria-label', '查看已归档')
+        btn.innerHTML = ARCHIVE_ICON_SVG
+        btn.addEventListener('mouseenter', function () { showArchiveTip(btn) }, false)
+        btn.addEventListener('mouseleave', hideArchiveTip, false)
+        btn.addEventListener('click', function () { hideArchiveTip(); openPanel() }, false)
+        if (header !== null || foot !== null) {
+          repositionArchiveBtn(btn, header, foot, collapsed)
+          syncArchiveRail()
+          return
+        }
+        // 侧栏整体缺失（窄窗等）：贴着新建会话按钮放，保证入口存在。
         const newSession = document.querySelector('button[aria-label="新建会话"], button[aria-label="New session"]')
         if (newSession !== null && newSession.parentNode !== null) {
           newSession.parentNode.insertBefore(btn, newSession.nextSibling)
