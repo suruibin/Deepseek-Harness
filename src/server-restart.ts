@@ -1,12 +1,11 @@
 /**
  * dsh-desktop server restart domain: the orphan reaper for a server child,
  * killing an externally-spawned (non-group-leader) server, and the in-place
- * `dsh web` restart driven by the archived panel's 「重启 dsh」 button.
+ * `dsh web` restart driven by the tray menu's Restart DSH item.
  *
  * Split out of main.ts so the main module keeps only the boot/window wiring;
  * these functions form the standalone "server restart" surface and reach the
- * shared server/window state through {@link ServerRestartContext}.
- */
+ * shared server/window state through {@link ServerRestartContext}. */
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
@@ -125,8 +124,8 @@ export function killProcessDirect(pid: number): Promise<void> {
 }
 
 /**
- * Restart the dsh web server in place (driven by the archived panel's
- * 「重启 dsh」 button). The host keeps its workspace registry in memory and
+ * Restart the dsh web server in place (driven by the tray menu's Restart DSH
+ * item). The host keeps its workspace registry in memory and
  * re-reads workspace.json only at startup, so the shell's unarchive/restore
  * ledger edits take effect in the official sidebar only after such a restart.
  *

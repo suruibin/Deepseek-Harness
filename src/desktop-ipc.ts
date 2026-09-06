@@ -62,8 +62,6 @@ export interface DesktopIpcContext {
   getWallpaperRotate: () => { enabled: boolean; minutes: number }
   /** Set auto-rotate (enabled + minutes, optional new folder) and persist. */
   setWallpaperRotate: (enabled: boolean, minutes: number, folder: string | null) => void
-  /** Restart the dsh web server in place, reloading the hosted window. */
-  restartWebServer: () => Promise<{ ok: true; url: string } | { ok: false; message: string }>
 }
 
 /**
@@ -482,7 +480,4 @@ export function registerDesktopIpc(ctx: DesktopIpcContext): void {
     clipboard.writeText(typeof text === 'string' ? text : '')
     return true
   })
-  // 重启 dsh web（已归档面板「重启 dsh」按钮）：宿主内存 registry 权威，取消归档/
-  // 恢复的账本改动需重启后官方侧栏才更新；该 handler 原地重启并重载窗口。
-  ipcMain.handle('dsh:web-restart', () => ctx.restartWebServer())
 }

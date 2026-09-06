@@ -119,9 +119,9 @@ function reportServerExit(code: number | null, signal: NodeJS.Signals | null, st
 }
 
 /**
- * Restart `dsh web` in place — shared by the tray menu and the archived
- * panel's 「重启 dsh」 button. Clicks while a restart is already in flight
- * are collapsed (a second kill would take down the freshly spawned child).
+ * Restart `dsh web` in place — driven by the tray menu's Restart DSH item.
+ * Clicks while a restart is already in flight are collapsed (a second kill
+ * would take down the freshly spawned child).
  */
 function restartServer(): Promise<{ ok: true; url: string } | { ok: false; message: string }> {
   if (serverRestarting) return Promise.resolve({ ok: false, message: '重启 dsh 正在进行中' })
@@ -776,7 +776,6 @@ if (!app.requestSingleInstanceLock()) {
       if (folder !== undefined && folder !== null) wallpaperFolder = folder
       saveGlass()
     },
-    restartWebServer: restartServer,
   })
   // 会话删除 / 已归档 / 回收站 IPC（preload 桥 window.dshDesktop.session）。
   registerSessionManageIpc()

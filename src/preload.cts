@@ -135,8 +135,6 @@ const session = {
   trashDelete: (sessionId: string): Promise<unknown> => ipcRenderer.invoke('dsh:session-trash-delete', sessionId),
   /** Empty the whole recycle bin; resolves to { ok, removed } or { error }. */
   trashEmpty: (): Promise<unknown> => ipcRenderer.invoke('dsh:session-trash-empty'),
-  /** Restart the dsh web server in place; applies unarchive/restore to the official sidebar. Resolves to { ok, url } or { error }. */
-  restartWeb: (): Promise<unknown> => ipcRenderer.invoke('dsh:web-restart'),
 }
 
 contextBridge.exposeInMainWorld('dshDesktop', {

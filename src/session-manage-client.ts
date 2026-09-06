@@ -13,7 +13,8 @@
  *
  * 说明：
  *   - 宿主内存 registry 权威且不随 workspace.json 文件改动刷新，因此
- *     「取消归档 / 恢复」的账本改动需重启 dsh 后才在官方列表生效（toast 提示）。
+ *     「取消归档 / 恢复」的账本改动需重启 dsh 后才在官方列表生效（重启入口
+ *     在桌面托盘菜单 Restart DSH）。
  *   - 全部逻辑包在大 try/catch 里：IIFE 内任何未捕获异常都会中断后续注入，
  *     故每个独立步骤（菜单、面板、异步）都各自兜底。
  *   - 样式复用页面可见的 --dsw-* CSS 变量（深色/浅色主题自动适配）。
@@ -215,7 +216,7 @@ export function sessionManageScript(): string {
       const p = s === null ? Promise.resolve({ ok: false, message: '桌面桥接不可用' }) : s.unarchive(sessionId)
       return p.then(function (res) {
         if (res !== null && typeof res === 'object' && res.ok === true) {
-          showToast('已取消归档（官方侧栏需点「重启 dsh」后更新）', 5000)
+          showToast('已取消归档（官方侧栏需托盘菜单 Restart DSH 后更新）', 5000)
           return true
         }
         showToast('取消归档失败：' + (res !== null && typeof res === 'object' && typeof res.message === 'string' ? res.message : '未知错误'), 5000)
@@ -231,7 +232,7 @@ export function sessionManageScript(): string {
       const p = s === null ? Promise.resolve({ ok: false, message: '桌面桥接不可用' }) : s.trashRestore(sessionId)
       return p.then(function (res) {
         if (res !== null && typeof res === 'object' && res.ok === true) {
-          showToast('已恢复（官方侧栏需点「重启 dsh」后更新）', 5000)
+          showToast('已恢复（官方侧栏需托盘菜单 Restart DSH 后更新）', 5000)
           return true
         }
         showToast('恢复失败：' + (res !== null && typeof res === 'object' && typeof res.message === 'string' ? res.message : '未知错误'), 5000)
@@ -520,17 +521,17 @@ export function sessionManageScript(): string {
       })
     }
     const batchArchivedUnarchive = function (ids) {
-      askConfirm('取消归档选中会话', '将把选中的 ' + ids.length + ' 个会话重新挂回工作区列表。官方侧栏需点「重启 dsh」后更新。确定继续吗？', '取消归档', function () {
+      askConfirm('取消归档选中会话', '将把选中的 ' + ids.length + ' 个会话重新挂回工作区列表。官方侧栏需托盘菜单 Restart DSH 后更新。确定继续吗？', '取消归档', function () {
         const done = { n: 0 }
         runSeq(ids, runUnarchiveNoToast, done).then(function () {
           clearSelectExit()
-          showToast('已取消归档 ' + done.n + ' 个会话（官方侧栏点「重启 dsh」后更新）', 5000)
+          showToast('已取消归档 ' + done.n + ' 个会话（官方侧栏托盘菜单 Restart DSH 后更新）', 5000)
           refreshPanel()
         })
       })
     }
     const batchTrashRestore = function (ids) {
-      askConfirm('恢复选中会话', '将把选中的 ' + ids.length + ' 个会话日志移回并重新挂回列表。官方侧栏需点「重启 dsh」后更新。确定继续吗？', '恢复', function () {
+      askConfirm('恢复选中会话', '将把选中的 ' + ids.length + ' 个会话日志移回并重新挂回列表。官方侧栏需托盘菜单 Restart DSH 后更新。确定继续吗？', '恢复', function () {
         const done = { n: 0 }
         runSeq(ids, runTrashRestoreNoToast, done).then(function () {
           clearSelectExit()
@@ -585,13 +586,13 @@ export function sessionManageScript(): string {
         badge.style.cssText = 'font-size:11px;color:#fff;background:#d93026;border-radius:6px;padding:2px 6px;flex-shrink:0'
         row.appendChild(badge)
         row.appendChild(smallBtn('恢复', function () {
-          askConfirm('恢复会话', '将把该会话日志移回原目录并重新挂回工作区列表。官方侧栏需在面板右上角点「重启 dsh」后更新。确定继续吗？', '恢复', function () {
+          askConfirm('恢复会话', '将把该会话日志移回原目录并重新挂回工作区列表。官方侧栏需托盘菜单点 Restart DSH 后更新。确定继续吗？', '恢复', function () {
             runTrashRestore(item.sessionId).then(function () { refreshPanel() })
           })
         }, false))
       } else {
         row.appendChild(smallBtn('取消归档', function () {
-          askConfirm('取消归档会话', '将把该会话重新挂回工作区列表。官方侧栏需在面板右上角点「重启 dsh」后更新。确定继续吗？', '取消归档', function () {
+          askConfirm('取消归档会话', '将把该会话重新挂回工作区列表。官方侧栏需托盘菜单点 Restart DSH 后更新。确定继续吗？', '取消归档', function () {
             runUnarchive(item.sessionId).then(function () { refreshPanel() })
           })
         }, false))
@@ -625,7 +626,7 @@ export function sessionManageScript(): string {
       attachRowSelection(row, item.sessionId)
       row.appendChild(info)
       row.appendChild(smallBtn('恢复', function () {
-        askConfirm('恢复会话', '将把该会话日志移回原目录并重新挂回工作区列表。官方侧栏需在面板右上角点「重启 dsh」后更新。确定继续吗？', '恢复', function () {
+        askConfirm('恢复会话', '将把该会话日志移回原目录并重新挂回工作区列表。官方侧栏需托盘菜单点 Restart DSH 后更新。确定继续吗？', '恢复', function () {
           runTrashRestore(item.sessionId).then(function () { refreshPanel() })
         })
       }, false))
@@ -808,33 +809,11 @@ export function sessionManageScript(): string {
       titleEl.style.cssText = 'position:absolute;left:50%;transform:translateX(-50%);font-size:16px;line-height:24px;font-weight:600'
       const actions = document.createElement('div')
       actions.style.cssText = 'display:flex;align-items:center;gap:8px'
-      const restartBtn = document.createElement('button')
-      restartBtn.type = 'button'
-      restartBtn.textContent = '重启 dsh'
-      restartBtn.dataset.tip = '重启后端 dsh web，使「取消归档 / 恢复」在官方侧栏生效'
-      restartBtn.style.cssText = 'padding:4px 12px;border-radius:8px;border:none;cursor:pointer;font:inherit;font-size:12px;background:rgba(255,255,255,0.14);color:inherit'
-      restartBtn.addEventListener('click', function () {
-        askConfirm('重启 dsh', '将重启后端 dsh web 服务（约几秒），使「取消归档 / 恢复」在官方侧栏生效，当前窗口会自动重载。确定继续吗？', '重启', function () {
-          showToast('正在重启 dsh…', 30000)
-          const s = bridge()
-          const p = s === null ? Promise.resolve({ ok: false, message: '桌面桥接不可用' }) : s.restartWeb()
-          p.then(function (res) {
-            if (res !== null && typeof res === 'object' && res.ok === true) {
-              showToast('dsh 已重启，官方侧栏已更新', 4000)
-            } else {
-              showToast('重启失败：' + (res !== null && typeof res === 'object' && typeof res.message === 'string' ? res.message : '未知错误'), 6000)
-            }
-          }).catch(function (err) {
-            showToast('重启失败：' + (err instanceof Error ? err.message : String(err)), 6000)
-          })
-        })
-      }, false)
       const closeBtn = document.createElement('button')
       closeBtn.type = 'button'
       closeBtn.textContent = '✕'
       closeBtn.style.cssText = 'border:none;background:transparent;cursor:pointer;font:inherit;font-size:14px;color:rgba(255,255,255,0.6);padding:4px 8px'
       closeBtn.addEventListener('click', removePanel, false)
-      actions.appendChild(restartBtn)
       actions.appendChild(closeBtn)
       header.appendChild(titleEl)
       header.appendChild(actions)
