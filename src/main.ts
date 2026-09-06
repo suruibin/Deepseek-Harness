@@ -30,6 +30,13 @@ import { sessionManageScript } from './session-manage-client.ts'
 const APP_ID = 'ai.deepseek.dsh-desktop'
 const WINDOW_TITLE = 'DSH Desktop'
 
+// Linux 托盘项（SNI）的 id 是 `<app 名>_status_icon_<序号>`，默认取
+// package.json 的 name（dsh-desktop-electron），面板显示这串长 id。改名为
+// Deepseek Harness；userData 必须显式钉回原目录，否则既有配置
+// （glass-settings.json、壁纸、cookies）会随改名落到新目录丢失。
+app.setName('Deepseek Harness')
+app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop-electron'))
+
 // The hosted SPA is a dark theme; Chromium's native form controls (e.g. the
 // <select> popup lists in 主题设置 → 光标特效) otherwise render their popup
 // menus in the system's light palette (a pale gray slab on the dark glass
@@ -109,6 +116,25 @@ function reportServerExit(code: number | null, signal: NodeJS.Signals | null, st
     message: 'dsh web exited unexpectedly',
     detail: `code ${String(code)} signal ${String(signal)}\n${stderrTail}`,
   }).finally(() => { app.quit() })
+}
+
+/**
+ * Restart `dsh web` in place — shared by the tray menu and the archived
+ * panel's 「重启 dsh」 button. Clicks while a restart is already in flight
+ * are collapsed (a second kill would take down the freshly spawned child).
+ */
+function restartServer(): Promise<{ ok: true; url: string } | { ok: false; message: string }> {
+  if (serverRestarting) return Promise.resolve({ ok: false, message: '重启 dsh 正在进行中' })
+  return restartWebServer({
+    serverUrl: () => serverUrl,
+    server: () => server,
+    mainWindow: () => mainWindow,
+    setServer: (child) => { server = child },
+    setServerUrl: (url) => { serverUrl = url },
+    isRestarting: () => serverRestarting,
+    setRestarting: (value) => { serverRestarting = value },
+    onUnexpectedExit: reportServerExit,
+  })
 }
 // Glass styling state: the current Linux tint alpha, theme preference, and
 // the stored wallpaper file name (or null).
@@ -465,12 +491,28 @@ function createWindow(url: URL): void {
 
 /**
  * Build the tray context menu. Glass opacity and page theme are controlled
- * from the hosted settings page (通用设置 → 外观), so the tray only carries
- * the window and quit actions.
+ * from the hosted settings page (通用设置 → 外观), so the tray carries the
+ * window, in-place server restart, and quit actions.
  */
 function buildTrayMenu(): Menu {
   return Menu.buildFromTemplate([
     { label: 'Open Window', click: showWindow },
+    { type: 'separator' },
+    {
+      label: 'Restart DSH',
+      click: () => {
+        void restartServer().then((result) => {
+          if (result.ok) return
+          // The tray has no toast surface; report failures as a dialog.
+          void dialog.showMessageBox({
+            type: 'warning',
+            title: WINDOW_TITLE,
+            message: 'Restart DSH failed',
+            detail: result.message,
+          })
+        })
+      },
+    },
     { type: 'separator' },
     { label: 'Quit', click: () => { app.quit() } },
   ])
@@ -734,16 +776,7 @@ if (!app.requestSingleInstanceLock()) {
       if (folder !== undefined && folder !== null) wallpaperFolder = folder
       saveGlass()
     },
-    restartWebServer: () => restartWebServer({
-      serverUrl: () => serverUrl,
-      server: () => server,
-      mainWindow: () => mainWindow,
-      setServer: (child) => { server = child },
-      setServerUrl: (url) => { serverUrl = url },
-      isRestarting: () => serverRestarting,
-      setRestarting: (value) => { serverRestarting = value },
-      onUnexpectedExit: reportServerExit,
-    }),
+    restartWebServer: restartServer,
   })
   // 会话删除 / 已归档 / 回收站 IPC（preload 桥 window.dshDesktop.session）。
   registerSessionManageIpc()
