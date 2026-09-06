@@ -33,6 +33,17 @@ export interface ServerRestartContext {
   setServer: (child: ChildProcess | undefined) => void
   /** Record the server's new URL. */
   setServerUrl: (url: URL) => void
+  /** True while a restart is intentionally killing/spawning the server; the
+   * main module's unexpected-exit watchdog must stay silent in this window
+   * (the killed child exits code 0, which otherwise pops the death dialog and
+   * quits the whole app mid-restart). */
+  isRestarting: () => boolean
+  /** Enter/leave the restart window (paired with {@link isRestarting}). */
+  setRestarting: (value: boolean) => void
+  /** Report a restarted child that died after its readiness was verified (the
+   * boot watchdog is attached to the original child only, so without this the
+   * first restart would leave later crashes unreported). */
+  onUnexpectedExit: (code: number | null, signal: NodeJS.Signals | null, stderrTail: string) => void
 }
 
 /**
@@ -149,6 +160,11 @@ export async function restartWebServer(ctx: ServerRestartContext): Promise<{ ok:
     }
   }
   if (killPid !== undefined) {
+    // The kill below is intentional: enter the restart window so the main
+    // module's unexpected-exit watchdog does not pop the death dialog (code 0)
+    // and quit the app mid-restart. Cleared once the new child is verified or
+    // the restart gives up.
+    ctx.setRestarting(true)
     if (owned) {
       await killProcessTree(killPid, { logger: (message) => { console.error(`[dsh-desktop] killTree ${message}`) } })
     } else {
@@ -174,6 +190,15 @@ export async function restartWebServer(ctx: ServerRestartContext): Promise<{ ok:
   child.on('error', (error) => {
     console.error(`[dsh-desktop] restart failed to spawn dsh web: ${error.message}`)
   })
+  // A crash after this restart's readiness boundary is an unexpected death the
+  // same way a boot crash is; before it, the catch below owns the failure
+  // (surfaced to the panel as a toast). Attached immediately; the verified
+  // flag splits the two regimes without a listener-attachment race.
+  let verified = false
+  child.on('exit', (code, signal) => {
+    if (!verified) return
+    ctx.onUnexpectedExit(code, signal, stderrTail)
+  })
   spawnReaper(child.pid ?? 0)
   child.stdout.setEncoding('utf8')
   let url: URL | undefined
@@ -185,11 +210,14 @@ export async function restartWebServer(ctx: ServerRestartContext): Promise<{ ok:
     if (childExited(child)) {
       throw new Error('restarted dsh web exited during verification')
     }
+    verified = true
   } catch (error) {
+    ctx.setRestarting(false)
     const message = error instanceof Error ? `${error.message}\n${stderrTail}` : String(error)
     console.error(`[dsh-desktop] restart failed: ${message}`)
     return { ok: false, message: `重启 dsh 失败: ${message}` }
   }
+  ctx.setRestarting(false)
   if (url === undefined) return { ok: false, message: '重启后未获得服务地址' }
   ctx.setServerUrl(url)
   // Reload the hosted window so the official sidebar re-reads the ledger and

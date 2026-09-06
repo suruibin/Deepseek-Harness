@@ -82,12 +82,34 @@ let serverUrl: URL | undefined
 // dsh CLI 版本（`dsh --version`），boot 时异步探测，用于主题面板页脚展示。
 let dshVersion = ''
 let quitting = false
+// True while the archived panel's 「重启 dsh」 is intentionally killing/
+// respawning the server: the unexpected-exit watchdog stays silent in this
+// window (the killed child exits code 0, which would otherwise pop the death
+// dialog and quit the app mid-restart).
+let serverRestarting = false
 // Set by the first fatal() so one root cause cannot show duplicate modal
 // dialogs or dispatch process-tree teardown twice.
 let failing = false
 // A focus request (second launch, tray click) that arrived while the server
 // was still booting and no window existed yet; honored once boot completes.
 let pendingFocus = false
+
+/**
+ * Report a server child that died outside any intentional path (boot crash
+ * after readiness, a restarted child crashing later). Silent while quitting or
+ * inside the restart window: those exits are the shutdown/restart flows' own
+ * kills, not accidents. Any other death is fatal to the shell — the hosted
+ * GUI cannot work without the server — so show the diagnostics and quit.
+ */
+function reportServerExit(code: number | null, signal: NodeJS.Signals | null, stderrTail: string): void {
+  if (quitting || serverRestarting) return
+  void dialog.showMessageBox({
+    type: 'error',
+    title: WINDOW_TITLE,
+    message: 'dsh web exited unexpectedly',
+    detail: `code ${String(code)} signal ${String(signal)}\n${stderrTail}`,
+  }).finally(() => { app.quit() })
+}
 // Glass styling state: the current Linux tint alpha, theme preference, and
 // the stored wallpaper file name (or null).
 const userData = app.getPath('userData')
@@ -614,13 +636,8 @@ async function boot(): Promise<void> {
     // Attached immediately so a crash during readiness cannot go unreported;
     // before readiness the readiness wait itself fails (the stream ends), so
     // the boot error path owns the message.
-    if (quitting || !ready) return
-    void dialog.showMessageBox({
-      type: 'error',
-      title: WINDOW_TITLE,
-      message: 'dsh web exited unexpectedly',
-      detail: `code ${String(code)} signal ${String(signal)}\n${stderrTail}`,
-    }).finally(() => { app.quit() })
+    if (!ready) return
+    reportServerExit(code, signal, stderrTail)
   })
   // No OS delivers a parent-death notification, so the reaper polls this
   // process and tree-kills the server if the main is ever hard-killed (Task
@@ -723,6 +740,9 @@ if (!app.requestSingleInstanceLock()) {
       mainWindow: () => mainWindow,
       setServer: (child) => { server = child },
       setServerUrl: (url) => { serverUrl = url },
+      isRestarting: () => serverRestarting,
+      setRestarting: (value) => { serverRestarting = value },
+      onUnexpectedExit: reportServerExit,
     }),
   })
   // 会话删除 / 已归档 / 回收站 IPC（preload 桥 window.dshDesktop.session）。
