@@ -10,7 +10,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { killProcessTree } from './process-tree.ts'
-import { app, BrowserWindow, dialog, Menu, nativeImage, nativeTheme, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, Menu, nativeImage, nativeTheme, session, shell, Tray } from 'electron'
 // node-pty is a native module; loaded lazily so a missing/broken build does
 // not break the shell. The embedded terminal feature degrades gracefully.
 const require_ = createRequire(import.meta.url)
@@ -514,7 +514,29 @@ function fatal(error: Error): void {
   }
 }
 
+/**
+ * dsh 的认证 cookie 名含 authority 哈希（dsh-auth-<hash>），而 cookie 不区分
+ * 端口——每次随机端口启动都会在 127.0.0.1 这个 cookie jar 里沉积一个永不
+ * 复用的旧 cookie，Cookie 请求头随之膨胀，最终超过服务器的请求头大小限制
+ * （431 → 空白窗口；浏览器 cookie jar 独立，故同一服务器浏览器能打开）。
+ * 启动时清掉全部 dsh-auth-*；认证 cookie 会由本次 URL 里的 launch token
+ * 立即重新种上，无副作用。
+ */
+async function clearStaleAuthCookies(): Promise<void> {
+  try {
+    const cookies = await session.defaultSession.cookies.get({})
+    for (const cookie of cookies) {
+      if (!cookie.name.startsWith('dsh-auth-') || cookie.domain === undefined) continue
+      const url = `http${cookie.secure ? 's' : ''}://${cookie.domain.replace(/^\./, '')}${cookie.path}`
+      await session.defaultSession.cookies.remove(url, cookie.name)
+    }
+  } catch (error) {
+    console.warn(`[dsh-desktop] 清理过期认证 cookie 失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
 async function boot(): Promise<void> {
+  await clearStaleAuthCookies()
   const launch = resolveWebLaunch({ env: process.env })
   // dsh 版本探测与 server 启动并发执行；注入发生在页面加载后，届时早已完成。
   void readDshVersion(launch).then((v) => { dshVersion = v })
