@@ -72,7 +72,7 @@ describe('PtyRegistry', () => {
     expect(reopened.transcript).toBe('hello world')
   })
 
-  it('caps the transcript at the configured limit (head dropped)', () => {
+  it('caps the transcript lazily: bulk head-drop once past 2× the limit', () => {
     const spawns: Array<ReturnType<typeof fakePty>> = []
     const registry = new PtyRegistry({
       transcriptLimit: 10,
@@ -85,8 +85,11 @@ describe('PtyRegistry', () => {
     const handle = registry.open('t1', '/work')
     spawns[0]!.emitData('0123456789')
     spawns[0]!.emitData('ABCDEF')
-    // '0123456789ABCDEF' keeps its last 10 bytes: '6789ABCDEF'
-    expect(handle.transcript).toBe('6789ABCDEF')
+    // 16 chars ≤ 2×10: within the lazy window, no per-chunk copy yet.
+    expect(handle.transcript).toBe('0123456789ABCDEF')
+    spawns[0]!.emitData('GHIJK')
+    // 21 > 2×10: one bulk truncation keeps the last 10 chars.
+    expect(handle.transcript).toBe('BCDEFGHIJK')
   })
 
   it('respawns an exited terminal on re-attach (reconnect yields a live shell)', () => {

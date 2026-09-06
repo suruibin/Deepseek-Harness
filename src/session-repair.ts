@@ -274,3 +274,33 @@ export function repairSessionLogs(root: string = join(homedir(), '.dsh', 'sessio
   }
   return report
 }
+
+/**
+ * repairSessionLogs 的 worker 线程版本：扫描与修复在独立线程执行，
+ * 主进程事件循环（启动期 IPC、窗口交互）保持响应。worker 入口按编译产物
+ * 解析（lib/session-repair-worker.js），vitest 直测仍走同步版本。
+ */
+export async function repairSessionLogsAsync(root: string = join(homedir(), '.dsh', 'sessions')): Promise<RepairReport> {
+  const { Worker } = await import('node:worker_threads')
+  const { fileURLToPath } = await import('node:url')
+  const workerFile = fileURLToPath(new URL('./session-repair-worker.js', import.meta.url))
+  return await new Promise<RepairReport>((resolve, reject) => {
+    let settled = false
+    const worker = new Worker(workerFile, { workerData: { root } })
+    worker.once('message', (report) => {
+      settled = true
+      resolve(report as RepairReport)
+      void worker.terminate()
+    })
+    worker.once('error', (error) => {
+      if (settled) return
+      settled = true
+      reject(error instanceof Error ? error : new Error(String(error)))
+    })
+    worker.once('exit', (code) => {
+      if (settled) return
+      settled = true
+      reject(new Error('会话日志修复线程未返回报告即退出 (code ' + String(code) + ')'))
+    })
+  })
+}

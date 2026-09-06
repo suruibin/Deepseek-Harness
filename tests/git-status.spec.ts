@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
-import { gitStatus, parsePorcelainZ } from '../src/git-status.ts'
+import { gitStatus, gitStatusCached, parsePorcelainZ } from '../src/git-status.ts'
 
 /** Minimal ChildProcess-like fake: streams stdout/stderr and emits close. */
 function fakeChild(out: string, code = 0, errOut = ''): ReturnType<typeof spawnFake> {
@@ -113,5 +113,60 @@ describe('gitStatus', () => {
     const result = await gitStatus('/repo', { spawn: spawnImpl })
     expect(result.branch).toBe('HEAD')
     expect(result.isRepo).toBe(true)
+  })
+})
+
+describe('gitStatusCached', () => {
+  const repoScript = (): Record<string, { out?: string; code?: number; err?: string }> => ({
+    'rev-parse --is-inside-work-tree': { out: 'true\n' },
+    'rev-parse --abbrev-ref HEAD': { out: 'main\n' },
+    'rev-parse --show-toplevel': { out: '/repo\n' },
+    'status --porcelain=v1 -z --untracked-files=normal': { out: ' M a.ts\0' },
+  })
+
+  it('serves repeat calls within the TTL from cache (one git pipeline)', async () => {
+    const { spawnImpl, calls } = makeSpawn(repoScript())
+    const cache = new Map()
+    let t = 0
+    const opts = { spawn: spawnImpl, now: (): number => t, cache }
+    const first = await gitStatusCached('/repo', opts)
+    const second = await gitStatusCached('/repo', opts)
+    expect(second).toBe(first)
+    expect(calls.length).toBe(4)
+    // TTL boundary: expiresAt = 0 + 1500, so t=1500 is already expired.
+    t = 1500
+    await gitStatusCached('/repo', opts)
+    expect(calls.length).toBe(8)
+  })
+
+  it('dedupes concurrent in-flight calls into one pipeline', async () => {
+    const { spawnImpl, calls } = makeSpawn(repoScript())
+    const cache = new Map()
+    const opts = { spawn: spawnImpl, now: (): number => 0, cache }
+    const [a, b] = await Promise.all([gitStatusCached('/repo', opts), gitStatusCached('/repo', opts)])
+    expect(b).toBe(a)
+    expect(calls.length).toBe(4)
+  })
+
+  it('keys the cache per cwd', async () => {
+    const { spawnImpl, calls } = makeSpawn(repoScript())
+    const cache = new Map()
+    const opts = { spawn: spawnImpl, now: (): number => 0, cache }
+    await gitStatusCached('/repo', opts)
+    await gitStatusCached('/other', opts)
+    expect(calls.length).toBe(8)
+  })
+
+  it('caches non-repo results too (no re-spawn while hot)', async () => {
+    const { spawnImpl, calls } = makeSpawn({
+      'rev-parse --is-inside-work-tree': { code: 128, err: 'fatal: not a git repository' },
+    })
+    const cache = new Map()
+    const opts = { spawn: spawnImpl, now: (): number => 0, cache }
+    const first = await gitStatusCached('/plain', opts)
+    const second = await gitStatusCached('/plain', opts)
+    expect(first).toEqual({ isRepo: false, entries: [] })
+    expect(second).toBe(first)
+    expect(calls.length).toBe(1)
   })
 })

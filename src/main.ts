@@ -22,7 +22,7 @@ import { detectExistingServer, readDshVersion, resolveWebLaunch, waitForHttpOk, 
 import { restartWebServer, spawnReaper, STDERR_TAIL_LIMIT } from './server-restart.ts'
 import { mergePlugins, pluginsCssScript, readPluginDir } from './plugins.ts'
 import { PtyRegistry } from './pty-registry.ts'
-import { repairSessionLogs } from './session-repair.ts'
+import { repairSessionLogsAsync } from './session-repair.ts'
 import { registerSessionManageIpc } from './session-manage.ts'
 import { registerDesktopIpc } from './desktop-ipc.ts'
 import { sessionManageScript } from './session-manage-client.ts'
@@ -525,38 +525,45 @@ function fatal(error: Error): void {
 async function clearStaleAuthCookies(): Promise<void> {
   try {
     const cookies = await session.defaultSession.cookies.get({})
+    const stale: Array<{ name: string; domain: string; path: string; secure: boolean }> = []
     for (const cookie of cookies) {
       if (!cookie.name.startsWith('dsh-auth-') || cookie.domain === undefined) continue
-      const url = `http${cookie.secure ? 's' : ''}://${cookie.domain.replace(/^\./, '')}${cookie.path}`
-      await session.defaultSession.cookies.remove(url, cookie.name)
+      stale.push({ name: cookie.name, domain: cookie.domain, path: cookie.path ?? '/', secure: cookie.secure === true })
     }
+    // 逐个 await 会串行等待每个 remove；彼此无依赖，全部并行。
+    await Promise.all(stale.map((c) =>
+      session.defaultSession.cookies.remove(`http${c.secure ? 's' : ''}://${c.domain.replace(/^\./, '')}${c.path}`, c.name),
+    ))
   } catch (error) {
     console.warn(`[dsh-desktop] 清理过期认证 cookie 失败: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
 async function boot(): Promise<void> {
-  await clearStaleAuthCookies()
+  // cookie 清理与 server 探测/启动无依赖，且耗时远小于 server 就绪等待——
+  // 与启动路径并发执行，只在窗口创建（首次导航）前 await 兜底，不再阻塞
+  // resolveWebLaunch / detectExistingServer。
+  const staleCookiesCleared = clearStaleAuthCookies()
   const launch = resolveWebLaunch({ env: process.env })
   // dsh 版本探测与 server 启动并发执行；注入发生在页面加载后，届时早已完成。
   void readDshVersion(launch).then((v) => { dshVersion = v })
   // 启动 dsh web 前自动检测并修复损坏的会话日志 (seq 缺口 / 多写流交错),
   // 否则 GUI 打开历史会话时会报 "corrupt session log: seq gap" 而失败。
-  // 修复只依赖磁盘上的会话文件，与 server 启动无依赖，故用 setImmediate
-  // 让它随 server 启动并发执行，不再同步阻塞启动路径（大量会话时省去整批
-  // 同步读盘）。server 在就绪前不会写会话日志，修复窗口内无并发写者。
-  setImmediate(() => {
-    try {
-      const report = repairSessionLogs()
+  // 修复只依赖磁盘上的会话文件，与 server 启动无依赖，故并发执行。zstd
+  // 解压与 JSONL 解析是同步 CPU 密集操作，放到 worker 线程跑（见
+  // repairSessionLogsAsync），启动期主进程事件循环保持响应；server 在就绪
+  // 前不会写会话日志，修复窗口内无并发写者。
+  void repairSessionLogsAsync()
+    .then((report) => {
       if (report.fixed > 0) {
         console.log(`[dsh-desktop] 自动修复 ${report.fixed} 个损坏的会话日志: ${report.details.filter((d) => d.fixed).map((d) => d.id).join(', ')}`)
       } else if (report.brokenRemaining > 0) {
         console.warn(`[dsh-desktop] ${report.brokenRemaining} 个会话日志损坏且无法自动修复`)
       }
-    } catch (error) {
+    })
+    .catch((error: unknown) => {
       console.warn(`[dsh-desktop] 会话日志自动修复失败: ${error instanceof Error ? error.message : String(error)}`)
-    }
-  })
+    })
   // 检测是否已有 dsh web 实例在运行（如常驻 GUI）。两个 dsh web 共享
   // ~/.dsh/sessions 却无跨进程写锁，并发写同一会话会产生 seq 重复/缺口并
   // 损坏历史；复用已有实例从源头消除这类损坏。
@@ -565,6 +572,7 @@ async function boot(): Promise<void> {
     if (existing !== undefined) {
       console.log(`[dsh-desktop] 检测到已运行的 dsh web 实例 ${existing.href}，直接复用（不启动第二个实例，避免并发写入会话存储）`)
       serverUrl = existing
+      await staleCookiesCleared
       Menu.setApplicationMenu(null)
       createWindow(existing)
       createTray()
@@ -651,6 +659,7 @@ async function boot(): Promise<void> {
   // child exit after binding). Only create the UI after the complete readiness
   // boundary succeeds, while fatal() tears the failed server down.
   if (!ready || url === undefined) return
+  await staleCookiesCleared
   Menu.setApplicationMenu(null)
   createWindow(url)
   createTray()

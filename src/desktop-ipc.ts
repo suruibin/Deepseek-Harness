@@ -11,7 +11,7 @@
 
 import { clipboard, dialog, ipcMain, nativeImage, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
-import { gitStatus } from './git-status.ts'
+import { gitStatusCached } from './git-status.ts'
 import { isHexColor } from './glass.ts'
 import type { PtyRegistry } from './pty-registry.ts'
 import { removeStoredWallpaper, storeWallpaper, wallpaperDataUrl } from './wallpaper.ts'
@@ -97,6 +97,38 @@ export function registerDesktopIpc(ctx: DesktopIpcContext): void {
   // returns the transcript for replay, input is raw text, resize is a
   // dimension pair, and close releases the pty immediately (the owning tab
   // was closed).
+  // ── Terminal output coalescing ──
+  // node-pty 常以几十字节为一块高频吐出；逐块 webContents.send 每块都要付
+  // 一次 IPC 序列化与渲染端事件分发，构建/cat 大文件时每秒数百条消息。这里
+  // 按 tab 缓冲、合并后整包推送：16ms 定时器兜底（回显延迟上界），满 64 KiB
+  // 立即冲刷（突发大输出不等定时器）。join 保持 chunk 顺序，逐 tab FIFO。
+  const termPending = new Map<string, { chunks: string[]; bytes: number; timer: ReturnType<typeof setTimeout> | undefined }>()
+  const flushTermData = (tabId: string): void => {
+    const entry = termPending.get(tabId)
+    if (entry === undefined) return
+    if (entry.timer !== undefined) clearTimeout(entry.timer)
+    termPending.delete(tabId)
+    if (entry.chunks.length > 0) {
+      ctx.pushToWindow('dsh:term-data', { tabId, data: entry.chunks.join('') })
+    }
+  }
+  const queueTermData = (tabId: string, data: string): void => {
+    let entry = termPending.get(tabId)
+    if (entry === undefined) {
+      entry = { chunks: [], bytes: 0, timer: undefined }
+      termPending.set(tabId, entry)
+    }
+    entry.chunks.push(data)
+    entry.bytes += data.length
+    if (entry.bytes >= 65_536) {
+      flushTermData(tabId)
+      return
+    }
+    const pending = entry
+    if (pending.timer === undefined) {
+      pending.timer = setTimeout(() => { flushTermData(tabId) }, 16)
+    }
+  }
   ipcMain.handle('dsh:term-open', (_event, tabId: unknown, cwd: unknown) => {
     if (typeof tabId !== 'string' || tabId === '') {
       return { error: 'invalid tab id' }
@@ -115,8 +147,12 @@ export function registerDesktopIpc(ctx: DesktopIpcContext): void {
       // lands before the first live chunk.
       if (!ctx.attachedTermTabs.has(tabId)) {
         ctx.attachedTermTabs.add(tabId)
-        handle.pty.onData((data: string) => { ctx.pushToWindow('dsh:term-data', { tabId, data }) })
-        handle.pty.onExit(({ exitCode }) => { ctx.pushToWindow('dsh:term-exit', { tabId, code: exitCode }) })
+        handle.pty.onData((data: string) => { queueTermData(tabId, data) })
+        handle.pty.onExit(({ exitCode }) => {
+          // 先冲刷残余输出再发退出事件，保证渲染端 "最后一屏 → exit 提示" 顺序。
+          flushTermData(tabId)
+          ctx.pushToWindow('dsh:term-exit', { tabId, code: exitCode })
+        })
       }
       return { transcript: handle.transcript, exited: handle.exited, exitCode: handle.exitCode }
     } catch (error) {
@@ -135,6 +171,8 @@ export function registerDesktopIpc(ctx: DesktopIpcContext): void {
   })
   ipcMain.on('dsh:term-close', (_event, tabId: unknown) => {
     if (typeof tabId !== 'string' || tabId === '') return
+    // 关闭前冲刷该 tab 的未发缓冲，避免尾巴输出滞留到 16ms 定时器才落空。
+    flushTermData(tabId)
     ctx.ptyRegistry.close(tabId)
     ctx.attachedTermTabs.delete(tabId)
   })
@@ -252,10 +290,12 @@ export function registerDesktopIpc(ctx: DesktopIpcContext): void {
   })
   // Git status IPC (preload bridge): the file tree's change badges. The
   // query never throws — outside a repository (or without git) it resolves
-  // to { isRepo: false } and the tree renders without badges.
+  // to { isRepo: false } and the tree renders without badges. The panel
+  // re-queries the same workspace cwd on every navigation, so the cached
+  // variant (short TTL + in-flight dedupe) collapses those repeats.
   ipcMain.handle('dsh:git-status', async () => {
     try {
-      return await gitStatus(process.cwd())
+      return await gitStatusCached(process.cwd())
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) }
     }

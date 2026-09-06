@@ -141,3 +141,60 @@ export async function gitStatus(cwd: string, options: GitStatusOptions = {}): Pr
     entries: parsePorcelainZ(raw).map((entry) => ({ ...entry, path: join(repoRoot, entry.path) })),
   }
 }
+
+/** One cached status query: expiry timestamp + the in-flight/final promise. */
+interface GitStatusCacheEntry {
+  expiresAt: number
+  promise: Promise<GitStatusResult>
+}
+
+/** Module-level store (the default {@link gitStatusCached} cache). */
+const gitStatusCache = new Map<string, GitStatusCacheEntry>()
+/** Cached-cwd cap; the oldest entry is evicted past it. */
+const GIT_STATUS_CACHE_LIMIT = 16
+
+/** Options for {@link gitStatusCached}; all injectable for tests. */
+export interface GitStatusCachedOptions extends GitStatusOptions {
+  /** Cache TTL in milliseconds; defaults to 1500ms. */
+  ttlMs?: number
+  /** TTL clock; defaults to `Date.now`. */
+  now?: () => number
+  /** Cache store; defaults to the module-level map (test isolation). */
+  cache?: Map<string, GitStatusCacheEntry>
+}
+
+/**
+ * {@link gitStatus} behind a short TTL cache keyed by cwd, with in-flight
+ * dedupe. The file panel re-queries the SAME workspace cwd on every
+ * navigation/refresh, so each query used to re-run the full git pipeline
+ * (4 processes over 2 serial rounds) even though nothing changed; within the
+ * TTL every repeat — including concurrent ones — shares one result. Non-repo
+ * outcomes are cached too, so browsing outside a repository doesn't spawn
+ * either. A handful of cwds are kept (oldest evicted) so panel workspaces
+ * stay hot across switches.
+ */
+export function gitStatusCached(cwd: string, options: GitStatusCachedOptions = {}): Promise<GitStatusResult> {
+  const ttlMs = options.ttlMs ?? 1_500
+  const nowFn = options.now ?? Date.now
+  const store = options.cache ?? gitStatusCache
+  const now = nowFn()
+  const hit = store.get(cwd)
+  if (hit !== undefined) {
+    if (hit.expiresAt > now) return hit.promise
+    store.delete(cwd)
+  }
+  const entry: GitStatusCacheEntry = {
+    expiresAt: now + ttlMs,
+    promise: gitStatus(cwd, options),
+  }
+  // delete-then-set refreshes the insertion order so a re-queried cwd counts
+  // as recent for the eviction pass below.
+  store.delete(cwd)
+  store.set(cwd, entry)
+  while (store.size > GIT_STATUS_CACHE_LIMIT) {
+    const oldest = store.keys().next().value
+    if (oldest === undefined) break
+    store.delete(oldest)
+  }
+  return entry.promise
+}

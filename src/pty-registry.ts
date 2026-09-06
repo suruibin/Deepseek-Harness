@@ -6,9 +6,9 @@
  * - One node-pty process per tab key. A tab that already has a live process
  *   reuses it (attach), so switching tabs or re-opening the panel never
  *   spawns a second shell.
- * - Output is mirrored into a bounded transcript ring (capped bytes), and an
- *   attach replays the transcript before live output — a re-open shows the
- *   full history instead of a blank terminal.
+ * - Output is mirrored into a bounded transcript (lazy truncation at 2× the
+ *   limit, head dropped in bulk), and an attach replays the transcript before
+ *   live output — a re-open shows the full history instead of a blank terminal.
  * - Closing a tab releases the process immediately (`close`); a bare detach
  *   (panel hidden, page navigated) schedules a delayed release so a quick
  *   re-attach keeps the same shell, and the pending release is cancelled by
@@ -48,7 +48,7 @@ export interface PtyHandle {
   cwd: string
   /** The live pty process. */
   pty: PtyLike
-  /** Output accumulated since spawn (bounded; head dropped when over the limit). */
+  /** Output accumulated since spawn (bounded at 2× the transcript limit; head dropped in bulk once past 2×). */
   transcript: string
   /** Whether the top-level process exited (transcript stays replayable). */
   exited: boolean
@@ -143,7 +143,11 @@ export class PtyRegistry {
     }
     handle.pty.onData((data) => {
       handle.transcript += data
-      if (handle.transcript.length > this.transcriptLimit) {
+      // 惰性截断：超过 2×limit 才做一次批量裁剪（每收到 limit 字节才付出
+      // 一次拷贝，均摊 O(1)）。此前逐 chunk 判断并在超限后每个 chunk 都
+      // slice 一次 ~limit 全量拷贝，持续输出（构建日志、cat 大文件）时是
+      // O(n²)。内存上界 2×limit，回放长度保持在 [limit, 2×limit)。
+      if (handle.transcript.length > this.transcriptLimit * 2) {
         handle.transcript = handle.transcript.slice(handle.transcript.length - this.transcriptLimit)
       }
     })
