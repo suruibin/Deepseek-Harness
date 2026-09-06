@@ -103,6 +103,14 @@ const state = {
   set: (state: unknown): Promise<unknown> => ipcRenderer.invoke('dsh:term-state-set', state),
 }
 
+/** Desktop feature toggles (主题设置 → 桌面功能), persisted by the main process. */
+const features = {
+  /** Resolves to the persisted { files, term, cycleSec } patch or {}. */
+  get: (): Promise<unknown> => ipcRenderer.invoke('dsh:features-get'),
+  /** Merge one patch ({ files?, term?, cycleSec? }); resolves to { ok: true } or { error }. */
+  set: (patch: unknown): Promise<unknown> => ipcRenderer.invoke('dsh:features-set', patch),
+}
+
 /** System clipboard via the main process (the page's http origin has no clipboard permission). */
 const clipboard = {
   /** Resolves to the current clipboard text. */
@@ -148,6 +156,8 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   backup,
   /** Terminal state bridge. */
   state,
+  /** Desktop feature toggles bridge. */
+  features,
   /** System clipboard bridge (terminal copy/paste). */
   clipboard,
   /** Session delete / archived / recycle-bin bridge. */

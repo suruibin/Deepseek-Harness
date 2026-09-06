@@ -827,18 +827,14 @@ export function terminalScript(): string {
 
     // ── Feature visibility (主题设置 → 桌面功能 toggles) ──
     // The 显示浏览文件夹 / 显示终端 switches decide whether the panels and
-    // their floating toggle buttons exist at all. Persisted in localStorage;
-    // live changes arrive as window events from featureControlScript.
-    const featureVisible = (key) => {
-      try {
-        const raw = localStorage.getItem(key)
-        if (raw !== null) return JSON.parse(raw) === true
-      } catch {}
-      return false
-    }
+    // their floating toggle buttons exist at all. Persisted by the main
+    // process (dsh:features-get, JSON keys 'files'/'term' — written by
+    // featureControlScript); live changes arrive as window events from it.
+    let featureState = {}
+    const featureVisible = (key) => featureState[key] === true
     const applyPanelVisibility = () => {
-      const filesOn = featureVisible('dsh-desktop-files-visible')
-      const termOn = featureVisible('dsh-desktop-terminal-visible')
+      const filesOn = featureVisible('files')
+      const termOn = featureVisible('term')
       if (!filesOn) {
         btnFiles.style.display = 'none'
         if (filesPanel.style.display === 'flex') filesClose()
@@ -871,6 +867,13 @@ export function terminalScript(): string {
     window.addEventListener('dsh-files-visible-change', onFilesVisibleChange)
     window.addEventListener('dsh-terminal-visible-change', onTerminalVisibleChange)
     applyPanelVisibility()
+    // The persisted switch states land asynchronously; re-apply once loaded.
+    if (window.dshDesktop.features) {
+      window.dshDesktop.features.get().then((loaded) => {
+        featureState = (loaded !== null && typeof loaded === 'object' && !Array.isArray(loaded)) ? loaded : {}
+        applyPanelVisibility()
+      }).catch(() => {})
+    }
 
     // Drag the panel's left edge to resize; the app squeeze follows.
     const resizeHandle = document.createElement('div')

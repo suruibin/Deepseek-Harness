@@ -1234,17 +1234,24 @@ export function ambientStyleScript(): string {
 
     // Every brandCycleMs() pick fresh whale + gradient colors and repaint
     // whichever brand surface is visible. The interval is user-configurable
-    // (主题设置 → 颜色切换时间, persisted in localStorage; default 10s);
-    // the timestamp guard dedupes the 1s heartbeat.
-    const brandCycleMs = () => {
-      try {
-        const raw = localStorage.getItem('dsh-desktop-brand-cycle-sec')
-        if (raw !== null) {
-          const v = JSON.parse(raw)
-          if (typeof v === 'number' && v >= 1 && v <= 600) return Math.round(v * 1000)
+    // (主题设置 → 颜色切换时间; default 10s), persisted by the main process
+    // through the window.dshDesktop.features bridge (key 'cycleSec') — NOT
+    // localStorage, whose origin changes with every launch's random port.
+    // Live changes arrive as the dsh-brand-cycle-change event from the
+    // settings control; the timestamp guard dedupes the 1s heartbeat.
+    let brandIntervalMs = 10000
+    const brandCycleMs = () => brandIntervalMs
+    window.addEventListener('dsh-brand-cycle-change', (e) => {
+      const ms = e.detail ? e.detail.intervalMs : undefined
+      if (typeof ms === 'number' && ms >= 1000 && ms <= 600000) brandIntervalMs = ms
+    })
+    if (window.dshDesktop !== undefined && window.dshDesktop.features) {
+      window.dshDesktop.features.get().then((loaded) => {
+        if (loaded !== null && typeof loaded === 'object' && !Array.isArray(loaded)) {
+          const secs = loaded.cycleSec
+          if (typeof secs === 'number' && secs >= 1 && secs <= 600) brandIntervalMs = Math.round(secs * 1000)
         }
-      } catch {}
-      return 10000
+      }).catch(() => {})
     }
     let lastBrandColorChange = 0
     const cycleBrandColors = () => {

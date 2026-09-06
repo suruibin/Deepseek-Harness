@@ -519,22 +519,36 @@ export function featureControlScript(): string {
       window.__dshFeatureControlObserver = undefined
     }
     const KEYS = {
-      files: 'dsh-desktop-files-visible',
-      term: 'dsh-desktop-terminal-visible',
-      cycle: 'dsh-desktop-brand-cycle-sec',
+      files: 'files',
+      term: 'term',
+      cycle: 'cycleSec',
     }
-    const read = (key, fallback) => {
-      try {
-        const raw = localStorage.getItem(key)
-        if (raw !== null) return JSON.parse(raw)
-      } catch {}
-      return fallback
-    }
+    // Persisted through the preload bridge into the shell's userData dir.
+    // localStorage is scoped to the dsh web origin, whose random port changes
+    // every launch and orphans everything stored there (the same reason the
+    // terminal panel state lives in the main process). The cache gates mount()
+    // until the async load lands, so the toggles never render a default and
+    // then visibly flip.
+    let state = {}
+    let stateReady = false
+    const read = (key, fallback) => (state[key] !== undefined ? state[key] : fallback)
     const write = (key, value) => {
-      try { localStorage.setItem(key, JSON.stringify(value)) } catch {}
+      state[key] = value
+      if (window.dshDesktop !== undefined && window.dshDesktop.features) {
+        window.dshDesktop.features.set({ [key]: value })
+      }
+    }
+    if (window.dshDesktop !== undefined && window.dshDesktop.features) {
+      window.dshDesktop.features.get().then((loaded) => {
+        state = (loaded !== null && typeof loaded === 'object' && !Array.isArray(loaded)) ? loaded : {}
+        stateReady = true
+        schedule()
+      }).catch(() => { stateReady = true })
+    } else {
+      stateReady = true
     }
     const mount = () => {
-      if (window.dshDesktop === undefined) return
+      if (window.dshDesktop === undefined || !stateReady) return
       // Mount inside the Theme Settings panel (主题设置), like the alpha and
       // wallpaper controls.
       const panel = document.querySelector('[data-dsh-theme-panel]')

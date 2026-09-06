@@ -24,6 +24,13 @@ import { removeStoredWallpaper, storeWallpaper, wallpaperDataUrl } from './wallp
 const TERM_STATE_FILE = 'terminal-state.json'
 
 /**
+ * Desktop feature toggles (主题设置 → 桌面功能: 侧边栏/显示终端/颜色切换时间)
+ * under userData, for the same reason as {@link TERM_STATE_FILE}: localStorage
+ * is scoped to the dsh web origin and orphaned by every launch's random port.
+ */
+const FEATURES_FILE = 'desktop-features.json'
+
+/**
  * References into the main module's live state. Primitives that the handlers
  * mutate (window alpha, wallpaper file) are exposed as get/set pairs so the
  * state itself stays owned by main.ts.
@@ -395,6 +402,33 @@ export function registerDesktopIpc(ctx: DesktopIpcContext): void {
     try {
       const { writeFile } = await import('node:fs/promises')
       await writeFile(join(ctx.userData, TERM_STATE_FILE), JSON.stringify(state), 'utf8')
+      return { ok: true }
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+  // Desktop feature toggles: get resolves the persisted patch, set merges one
+  // patch ({ files?, term?, cycleSec? }) into it. Merge-on-set so the three
+  // controls never overwrite each other with a stale full snapshot.
+  ipcMain.handle('dsh:features-get', async () => {
+    try {
+      const { readFile } = await import('node:fs/promises')
+      return JSON.parse(await readFile(join(ctx.userData, FEATURES_FILE), 'utf8'))
+    } catch {
+      return {}
+    }
+  })
+  ipcMain.handle('dsh:features-set', async (_event, patch: unknown) => {
+    if (typeof patch !== 'object' || patch === null || Array.isArray(patch)) {
+      return { error: 'invalid feature patch' }
+    }
+    try {
+      const { readFile, writeFile } = await import('node:fs/promises')
+      let current: Record<string, unknown> = {}
+      try {
+        current = JSON.parse(await readFile(join(ctx.userData, FEATURES_FILE), 'utf8'))
+      } catch { /* first write or unreadable file: start fresh */ }
+      await writeFile(join(ctx.userData, FEATURES_FILE), JSON.stringify({ ...current, ...(patch as Record<string, unknown>) }), 'utf8')
       return { ok: true }
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) }
