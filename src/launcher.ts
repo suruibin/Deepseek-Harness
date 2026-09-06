@@ -229,6 +229,12 @@ export async function waitForHttpOk(url: URL, options: HttpOkOptions = {}): Prom
   const pollIntervalMs = options.pollIntervalMs ?? 250
   const deadline = Date.now() + timeoutMs
   let lastError: unknown = new Error('no attempt made')
+  // dsh 0.1.1-rc.2 prints a tokenless ready line (`http://127.0.0.1:PORT`):
+  // its loopback-trust fence can answer 401 to a tokenless probe, yet any
+  // non-5xx HTTP response still proves the server is up and serving (the
+  // window gets the same loopback trust). Tokened URLs (0.1.2-rc.1 style)
+  // keep the strict gate below.
+  const tokenless = !url.searchParams.has('token')
   while (Date.now() < deadline) {
     try {
       // dsh 0.1.2 answers a valid token URL with 303 + session cookie and
@@ -237,6 +243,7 @@ export async function waitForHttpOk(url: URL, options: HttpOkOptions = {}): Prom
       const response = await fetchImpl(url, { signal: AbortSignal.timeout(2_000), redirect: 'manual' })
       if (response.ok) return
       if (response.status === 303) return
+      if (tokenless && response.status < 500) return
       lastError = new Error(`HTTP ${response.status}`)
     } catch (error) {
       lastError = error
@@ -308,8 +315,11 @@ export async function detectExistingServer(options: ExistingServerOptions): Prom
     try {
       const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) })
       if (!response.ok) continue
-      const head = (await response.text()).slice(0, 4096)
-      if (head.includes(DSH_ROOT_MARKER)) return url
+      // Read the whole payload: the boot marker sits inside the bundled
+      // client scripts far past the document head, so a small head window
+      // (4KiB) never saw it and reuse silently never triggered.
+      const body = (await response.text()).slice(0, 262_144)
+      if (body.includes(DSH_ROOT_MARKER)) return url
     } catch {
       // 不可达：候选端口上没有实例，继续下一个候选。
     }

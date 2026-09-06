@@ -220,6 +220,20 @@ describe('waitForHttpOk', () => {
     // The poll must have retried until the deadline, not given up after one attempt.
     expect(fetchImpl.mock.calls.length).toBeGreaterThan(1)
   })
+
+  it('accepts any non-5xx answer for a tokenless ready URL (dsh rc.2 loopback fence)', async () => {
+    // rc.2 prints `http://127.0.0.1:PORT` with no token; its fence can 401 the
+    // tokenless probe even though the server is perfectly alive and the window
+    // will get the same loopback trust.
+    const fetchImpl = vi.fn(async () => new Response('dsh web authentication required', { status: 401 }))
+    await expect(waitForHttpOk(new URL('http://127.0.0.1:1/'), { fetchImpl, timeoutMs: 100, pollIntervalMs: 5 })).resolves.toBeUndefined()
+  })
+
+  it('still gates tokened URLs on 200/303 (rc.1-style cookie flow)', async () => {
+    const fetchImpl = vi.fn(async () => new Response('dsh web authentication required', { status: 401 }))
+    await expect(waitForHttpOk(new URL('http://127.0.0.1:1/?token=abc'), { fetchImpl, timeoutMs: 50, pollIntervalMs: 5 }))
+      .rejects.toThrow(/HTTP 401/)
+  })
 })
 
 describe('childExited', () => {
@@ -251,6 +265,15 @@ describe('detectExistingServer', () => {
 
   it('reuses the default GUI port when it serves a real instance', async () => {
     const fetchImpl = vi.fn(async () => new Response('<html><script>window.__DSH_BOOT__ = {}</script></html>', { status: 200 }))
+    const url = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
+    expect(url?.href).toBe('http://127.0.0.1:3080/')
+  })
+
+  it('finds the marker even when it sits past the document head', async () => {
+    // Regression: the marker lives inside the bundled client scripts ~14KB
+    // into the payload; a 4KiB head window never saw it and reuse never fired.
+    const filler = 'x'.repeat(20_000)
+    const fetchImpl = vi.fn(async () => new Response(`<html><body>${filler}window.__DSH_BOOT__</body></html>`, { status: 200 }))
     const url = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
     expect(url?.href).toBe('http://127.0.0.1:3080/')
   })
