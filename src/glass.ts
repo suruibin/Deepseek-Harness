@@ -394,7 +394,7 @@ export function alphaControlScript(): string {
             label.textContent = pane === 'sidebar' ? '侧边栏' : '右侧'
             const trigger = document.createElement('button')
             trigger.type = 'button'
-            trigger.style.cssText = 'flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;width:112px;margin-left:auto;background:rgba(39,46,62,0.45);color:var(--dsw-alias-label-primary);border:1px solid rgba(128,132,142,0.28);border-radius:18px;padding:6px 12px;font-size:13px;cursor:pointer;outline:none'
+            trigger.style.cssText = 'flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;width:88px;margin-left:auto;background:var(--dsh-glass-popup-bg, rgba(39,46,62,0.07));color:var(--dsw-alias-label-primary);border:1px solid rgba(128,132,142,0.28);border-radius:18px;padding:6px 12px;font-size:13px;cursor:pointer;outline:none'
             const triggerLabel = document.createElement('span')
             const chevron = document.createElement('span')
             chevron.style.cssText = 'font-size:9px;opacity:0.85'
@@ -407,7 +407,7 @@ export function alphaControlScript(): string {
               e.stopPropagation()
               if (window.__dshFxOpenMenu !== undefined && window.__dshFxOpenMenu !== null) { closeFxMenu(); return }
               const menu = document.createElement('div')
-              menu.style.cssText = 'position:fixed;display:flex;flex-direction:column;gap:2px;padding:4px;min-width:140px;background:rgba(39,46,62,0.62);backdrop-filter:blur(24px) saturate(140%);-webkit-backdrop-filter:blur(24px) saturate(140%);border:1px solid rgba(255,255,255,0.14);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.4);z-index:2147483000'
+              menu.style.cssText = 'position:fixed;display:flex;flex-direction:column;gap:2px;padding:4px;min-width:140px;background:var(--dsh-glass-popup-bg,rgba(39,46,62,0.07));backdrop-filter:blur(24px) saturate(140%);-webkit-backdrop-filter:blur(24px) saturate(140%);border:1px solid rgba(255,255,255,0.14);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.4);z-index:2147483000'
               OPTIONS.forEach((opt) => {
                 const item = document.createElement('button')
                 item.type = 'button'
@@ -813,7 +813,7 @@ export function ambientStyleScript(): string {
       // cards). Same popup family treatment, but MORE transparent than the
       // popup slider default (user: 鼠标停留弹出的框没有模糊和透明 / 可以再透明点);
       // the wildcard keeps it working across web upgrades that re-hash the class.
-      'body > [class*=\"_card_\"] { background-color: rgba(39,46,62,0.45) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
+      'body > [class*=\"_card_\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
       // While the agent is answering, the center column repaints on every
       // token; the sidebar hover-preview card's backdrop-filter (above)
       // re-samples that moving backdrop each frame, and the compositor
@@ -833,8 +833,8 @@ export function ambientStyleScript(): string {
       // on the frosted settings panel (user: 背景颜色是灰色的, 跟毛玻璃不匹配).
       // Repaint both with translucent blue-gray frosted glass — same tone as
       // the input card — so the selected nav item reads as a glass chip.
-      '[class*=\"VOzbGW_navCell\"]:hover { background-color: rgba(39,46,62,0.35) !important; }',
-      '[class*=\"VOzbGW_navCell\"][class*=\"VOzbGW_active\"] { background-color: rgba(39,46,62,0.55) !important; }',
+      '[class*=\"VOzbGW_navCell\"]:hover { background-color: rgba(118,128,152,0.35) !important; }',
+      '[class*=\"VOzbGW_navCell\"][class*=\"VOzbGW_active\"] { background-color: rgba(118,128,152,0.45) !important; }',
       // Settings-panel form controls (光标特效 icon pickers 侧边栏/右侧, 标题
       // 颜色切换时间 seconds input): DSH paints them with
       // --dsw-alias-bg-layer-3 (OPAQUE rgb(39,46,62)) so they read as solid
@@ -842,27 +842,44 @@ export function ambientStyleScript(): string {
       // with translucent blue-gray glass — same family as the nav chips — so
       // the controls join the glass theme. Native popup lists stay dark
       // because the panel already sets color-scheme: dark.
-      '[class*=\"VOzbGW_options\"] select, [class*=\"VOzbGW_options\"] input[type=\"number\"] { background-color: rgba(39,46,62,0.45) !important; }',
+      '[class*=\"VOzbGW_options\"] select, [class*=\"VOzbGW_options\"] input[type=\"number\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; }',
+      // 原生复选框(主题面板 自动更换壁纸/启用): appearance:auto 的内核绘制在
+      // 暗色 color-scheme 下是实心暗块。改自绘:毛玻璃底 + 细边,勾选态用蓝色
+      // 底 + 白色对勾(SVG),与面板控件同族。面板里自带的开关 input 已是
+      // opacity:0 隐藏层,同规则无视觉影响。
+      '[data-dsh-theme-panel] input[type=\"checkbox\"] { appearance: none !important; -webkit-appearance: none !important; width: 14px !important; height: 14px !important; margin: 0 2px !important; border-radius: 4px !important; background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; border: 1px solid rgba(255,255,255,0.35) !important; cursor: pointer !important; }',
+      '[data-dsh-theme-panel] input[type=\"checkbox\"]:checked { background-color: rgba(65,118,230,0.75) !important; border-color: rgba(65,118,230,0.9) !important; background-image: url(\"data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 14 14%27%3E%3Cpath d=%27M3 7.5 6 10.5 11 4%27 fill=%27none%27 stroke=%27white%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E\") !important; background-size: 12px 12px !important; background-position: center !important; background-repeat: no-repeat !important; }',
       // Settings-panel selector buttons (标准模式 / Full access / 语言 / 排队
       // 发送): DSH paints them with --dsw-alias-bg-module-platform (OPAQUE
       // rgb(39,46,62)), so the resting button is a solid blue-gray block while
       // the popup it opens is already frosted (user: 默认的颜色是没修改的 只有
       // 点击后 颜色是修改后的). Repaint with the same translucent glass as the
       // other controls so button and popup read as one family.
-      '[class*=\"_selector\"] { background-color: rgba(39,46,62,0.45) !important; }',
+      '[class*=\"_selector\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
       // Agent 预设页预设卡片(rtSEdW_card): DSH 用实心 rgb(39,46,62) 绘制,在
       // 已磨砂的设置面板上读作实心色块 (user: 内置模式卡片没有做成毛玻璃)。
       // 面板自身已带 blur(20px),按已验证的 Chromium 行为祖先有
       // backdrop-filter 时子级嵌套模糊不渲染,这里与 navCell/控件同族只给
       // 半透明底色,让卡片透出面板的磨砂结果。用 [class~=] 精确匹配 token,
       // 避免通配符误染 cardMain/cardHead 等透明子元素。
-      '[class~=\"rtSEdW_card\"] { background-color: rgba(39,46,62,0.45) !important; }',
+      '[class~=\"rtSEdW_card\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; }',
+      // 卡片内 standard/ptc 等模式名徽章是 CODE.rtSEdW_cardId,被下方通用
+      // code 规则染成 0.4 深底;预设卡内不需要代码块对比度,同族改毛玻璃。
+      '[class~=\"rtSEdW_cardId\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; }',
+      // 反色元素族(白底 label-primary + bg-layer-3 文字): bg-layer-3 别名已被
+      // 上文改为半透明毛玻璃色,作文字色时白底上几乎不可见(当前使用 pill、
+      // 损坏徽章、保存按钮)。恢复不透明深色文字。
+      '[class~=\"rtSEdW_brokenBadge\"], [class~=\"YyYd_a_save\"] { color: rgb(39,46,62) !important; }',
+      // 当前使用 pill: 同卡片族改毛玻璃底 + 白字。
+      '[class~=\"rtSEdW_inUse\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; color: rgb(249,250,251) !important; }',
+      // 查看/复制 tooltip(::after 伪元素)与损坏提示: 毛玻璃 popup 底色 + blur,白字。
+      '[class~=\"rtSEdW_iconButton\"]::after, [class~=\"rtSEdW_brokenTip\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; color: rgb(249,250,251) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
       // 插件页卡片: 插件配置(YyYd_a_card: 终端/Agent 循环/网页搜索与
       // lc-settings-card)、插件市场入口(eGUBIq_setCard)与插件列表
       // (qSYn7G_card, 272px 网格卡)同样被 DSH 画成实心 rgb(39,46,62),与
       // Agent 预设卡片同族处理 — 半透明底色透出面板磨砂。
       // [class~=] 精确 token 匹配,不误染各透明子元素。
-      '[class~=\"YyYd_a_card\"], [class~=\"lc-settings-card\"], [class~=\"eGUBIq_setCard\"], [class~=\"qSYn7G_card\"] { background-color: rgba(39,46,62,0.45) !important; }',
+      '[class~=\"YyYd_a_card\"], [class~=\"lc-settings-card\"], [class~=\"eGUBIq_setCard\"], [class~=\"qSYn7G_card\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; }',
       // 光标特效 icon pickers (原生 <select>, 侧边栏/右侧): the settings row
       // flex-stretches them to the full panel width (~484px, user: 太长了).
       // Cap the width and pin them to the right edge of their row
@@ -883,8 +900,8 @@ export function ambientStyleScript(): string {
       // the input card) with a translucent border so it reads as a glass
       // chip instead of a solid dark dot. [class~=] matches the exact token,
       // so the zero-height slot container is left alone.
-      '[class~=\"Md3f7G_toBottom\"] { background: rgba(39,46,62,0.55) !important; backdrop-filter: blur(24px) saturate(140%) !important; -webkit-backdrop-filter: blur(24px) saturate(140%) !important; border-color: rgba(255,255,255,0.18) !important; }',
-      '[class~=\"Md3f7G_toBottom\"]:hover { background: rgba(39,46,62,0.72) !important; }',
+      '[class~=\"Md3f7G_toBottom\"] { background: rgba(118,128,152,0.45) !important; backdrop-filter: blur(24px) saturate(140%) !important; -webkit-backdrop-filter: blur(24px) saturate(140%) !important; border-color: rgba(255,255,255,0.18) !important; }',
+      '[class~=\"Md3f7G_toBottom\"]:hover { background: rgba(118,128,152,0.62) !important; }',
       // User feedback: the floating button sat ~170px above the composer,
       // too high. Drop it down so it hugs the input card (transform doesn't
       // disturb the sticky layout, it just shifts the visual position).
@@ -954,13 +971,13 @@ export function ambientStyleScript(): string {
       // 兄弟层(_mask_)已压暗到 50% 黑，若随弹出层滑块到 0.07 会透明得几乎看不
       // 到卡片边界；固定 0.35 保证毛玻璃卡清晰浮在压暗页面上，模糊仍跟随弹出层
       // 滑块。遮罩本身保留暗色。
-      '[class*="_confirmation_"] { background-color: rgba(39,46,62,0.35) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
+      '[class*="_confirmation_"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
       // 右侧「轨迹/上下文」面板里的实心暗色块：轨迹面板的搜索框(fV0t5q_search)
       // 与 Input/Model/Tools 表头行(_1p9O6q_plot)、上下文面板的统计卡(lc-stat，
       // 轮次/步数/注入/压缩/剪枝/工具调用/图片 等) 都是 DSH 用 OPAQUE rgb(32,38,52)
       // 画的暗板，与透明玻璃面板格格不入。统一改用弹出层毛玻璃(半透明深蓝灰 +
       // 弹出层模糊)，与悬浮卡/确认弹窗同族，跟随 --dsh-glass-popup-blur 滑块。
-      '.fV0t5q_search, ._1p9O6q_plot, .lc-stat { background-color: rgba(39,46,62,0.35) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
+      '.fV0t5q_search, ._1p9O6q_plot, .lc-stat { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
       // Tool-call output (Bash etc.) code blocks: DSH fills them with
       // --dsw-alias-markdown-code-block (opaque) and the banner with
       // --dsw-alias-markdown-code-block-banner (opaque). Repaint both with the
@@ -993,8 +1010,58 @@ export function ambientStyleScript(): string {
       // footer. No fixed color can match the translucent backdrop, so hide
       // the fade entirely — the band is gone, and the sidebar reads clean.
       '[class*=\"_sidebarCol\"] [class*=\"_fade\"] { display: none !important; }',
+      // 统一悬浮提示气泡(#dsh-glass-tip,JS 引擎见下方):我们注入的元素改用
+      // data-tip 替代浏览器原生 title 提示(原生样式无法定制,用户嫌弃),
+      // 悬停时显示倒圆角毛玻璃气泡,样式与预设卡 tooltip 同族(popup 底色 +
+      // popup 模糊 + 白字)。:not(rtSEdW) 排除 dsh 自带的 ::after 提示元素,
+      // 避免双重气泡。
+      '.dsh-glass-tip { position: fixed; z-index: 2147483647; pointer-events: none; opacity: 0; transition: opacity 0.12s ease; padding: 4px 10px; border-radius: 10px; background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)); backdrop-filter: var(--dsh-glass-popup-filter); -webkit-backdrop-filter: var(--dsh-glass-popup-filter); color: var(--dsw-alias-label-primary, #f9fafb); font-size: 12px; line-height: 18px; border: 1px solid rgba(255,255,255,0.18); box-shadow: 0 4px 16px rgba(0,0,0,0.28); white-space: nowrap; }',
+      '.dsh-glass-tip[data-show=\"1\"] { opacity: 1; }',
     ].join('\\n')
     document.head.appendChild(style)
+    // 悬浮提示引擎:委托 mouseover/out 监听 [data-tip](排除 rtSEdW 家族,
+    // 它们已有 ::after 提示),把气泡定位到元素下方居中,越界时翻转/夹紧。
+    // 固定 id:重复注入时先移除旧气泡,避免叠加;旧监听器引用已脱离 DOM 的
+    // div,无视觉副作用。
+    const prevTip = document.querySelector('#dsh-glass-tip')
+    if (prevTip !== null) prevTip.remove()
+    const tip = document.createElement('div')
+    tip.id = 'dsh-glass-tip'
+    tip.className = 'dsh-glass-tip'
+    tip.setAttribute('role', 'tooltip')
+    document.body.appendChild(tip)
+    let tipAnchor = null
+    const showTip = (el) => {
+      tipAnchor = el
+      tip.textContent = el.getAttribute('data-tip') || ''
+      const r = el.getBoundingClientRect()
+      const tw = tip.offsetWidth
+      const th = tip.offsetHeight
+      let x = r.left + r.width / 2 - tw / 2
+      x = Math.max(8, Math.min(x, window.innerWidth - tw - 8))
+      let y = r.bottom + 6
+      if (y + th > window.innerHeight - 8) y = Math.max(8, r.top - th - 6)
+      tip.style.left = x + 'px'
+      tip.style.top = y + 'px'
+      tip.setAttribute('data-show', '1')
+    }
+    const hideTip = () => {
+      tipAnchor = null
+      tip.setAttribute('data-show', '0')
+    }
+    document.addEventListener('mouseover', (e) => {
+      const el = e.target && e.target.closest ? e.target.closest('[data-tip]:not([class*=\"rtSEdW\"])') : null
+      if (el === null) { if (tipAnchor !== null) hideTip(); return }
+      if (el !== tipAnchor) showTip(el)
+    })
+    document.addEventListener('mouseout', (e) => {
+      if (tipAnchor === null) return
+      const rel = e.relatedTarget
+      const stillOnTips = rel !== null && rel.nodeType === 1 && (tipAnchor.contains(rel) || rel.closest('[data-tip]:not([class*=\"rtSEdW\"])') !== null)
+      if (!stillOnTips) hideTip()
+    })
+    window.addEventListener('scroll', hideTip, true)
+    window.addEventListener('resize', hideTip)
 
     // Brand colors: whale accent + gradient palette, cycled at the interval
     // configured in 主题设置 (default 10s, see brandCycleMs below).

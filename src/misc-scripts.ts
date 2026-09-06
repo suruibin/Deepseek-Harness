@@ -557,7 +557,7 @@ export function featureControlScript(): string {
         cycleControl.innerHTML =
           '<span style="color:var(--dsw-alias-label-secondary);font-size:13px" data-dsh-label-cycle></span>' +
           '<div style="display:flex;align-items:center;gap:6px;margin-left:auto">' +
-            '<input type="number" min="1" max="600" step="1" data-dsh-cycle-input style="width:64px;background:var(--dsh-glass-popup-bg,rgba(39,46,62,0.07));color:var(--dsw-alias-label-primary);border:none;border-radius:10px;padding:6px 8px;font-size:13px;text-align:center;outline:none">' +
+            '<input type="number" min="1" max="600" step="1" data-dsh-cycle-input style="width:52px;box-sizing:border-box;background:var(--dsh-glass-popup-bg,rgba(39,46,62,0.07));color:var(--dsw-alias-label-primary);border:none;border-radius:10px;padding:6px 8px;font-size:13px;text-align:center;outline:none">' +
             '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;min-width:16px" data-dsh-cycle-unit></span>' +
           '</div>'
         const sync = (sel, text) => {
@@ -640,9 +640,10 @@ export function featureControlScript(): string {
       }
       sync('[data-dsh-label-files]', labels.files)
       sync('[data-dsh-label-term]', labels.term)
-      // Initial state from persisted settings (defaults: both panels on).
-      filesToggle.checked = read(KEYS.files, true) !== false
-      termToggle.checked = read(KEYS.term, true) !== false
+      // Initial state from persisted settings (defaults: both panels off —
+      // the user opts in via the toggles).
+      filesToggle.checked = read(KEYS.files, false) === true
+      termToggle.checked = read(KEYS.term, false) === true
       filesToggle.addEventListener('change', () => {
         const visible = filesToggle.checked
         write(KEYS.files, visible)
@@ -923,8 +924,16 @@ export function glassControlsScript(): string {
  * settings panel is rebuilt, closes the panel when the user picks another
  * entry (the SPA re-renders its own content), and re-opens it if the SPA
  * re-renders the content area while the theme panel is open.
+ *
+ * The panel footer carries the desktop-shell version, the dsh CLI version and
+ * a GitHub link to
+ * the project (shell.openExternal via the window's setWindowOpenHandler).
+ * @param version - desktop shell version (app.getVersion()), shown in the
+ *   footer; empty hides the version label.
+ * @param dshVersion - dsh CLI version (readDshVersion), shown next to the
+ *   shell version; empty hides the label.
  */
-export function themeSettingsScript(): string {
+export function themeSettingsScript(version = '', dshVersion = ''): string {
   return `(() => {
     if (window.__dshThemeSettings) {
       try { window.__dshThemeSettings.cleanup() } catch {}
@@ -1099,6 +1108,21 @@ export function themeSettingsScript(): string {
       controls.appendChild(featureSlot)
       group.appendChild(controls)
       panel.appendChild(group)
+      // Footer: shell version + project link (GitHub icon), centered at the
+      // bottom of the theme panel.
+      const footer = document.createElement('div')
+      footer.dataset.dshThemeFooter = 'true'
+      footer.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:10px;padding:20px 0 8px;color:var(--dsw-alias-label-secondary);font-size:12px'
+      footer.innerHTML =
+        '${dshVersion === '' ? '' : '<span data-dsh-footer-dsh>dsh ' + dshVersion + '</span>'}' +
+        '<a href="https://github.com/suruibin/Deepseek-Harness" target="_blank" rel="noreferrer" data-tip="GitHub" ' +
+          'style="display:inline-flex;align-items:center;color:var(--dsw-alias-label-secondary)">' +
+          '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
+            '<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>' +
+          '</svg>' +
+        '</a>' +
+        '<span data-dsh-footer-version>v${version}</span>'
+      panel.appendChild(footer)
       options.appendChild(panel)
       state.open = true
       setActive(true)

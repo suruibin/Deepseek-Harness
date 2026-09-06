@@ -776,7 +776,7 @@ export function sessionManageScript(): string {
       overlay.id = 'dsh-sm-panel-overlay'
       overlay.style.cssText = 'position:fixed;inset:0;z-index:1300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.35)'
       const card = document.createElement('div')
-      card.style.cssText = 'width:min(620px,calc(100vw - 48px));height:560px;display:flex;flex-direction:column;border-radius:16px;padding:20px;background:rgba(39,46,62,0.45);backdrop-filter:blur(var(--dsh-glass-popup-blur,40px)) saturate(140%);-webkit-backdrop-filter:blur(var(--dsh-glass-popup-blur,40px)) saturate(140%);color:var(--dsh-alias-label-primary-inverted,#f2f3f5);box-shadow:var(--dsw-shadow-lv3,0 8px 24px rgba(0,0,0,0.35));border:1px solid rgba(255,255,255,0.12)'
+      card.style.cssText = 'width:min(620px,calc(100vw - 48px));height:560px;display:flex;flex-direction:column;border-radius:16px;padding:20px;background:var(--dsh-glass-popup-bg,rgba(39,46,62,0.07));backdrop-filter:blur(var(--dsh-glass-popup-blur,40px)) saturate(140%);-webkit-backdrop-filter:blur(var(--dsh-glass-popup-blur,40px)) saturate(140%);color:var(--dsh-alias-label-primary-inverted,#f2f3f5);box-shadow:var(--dsw-shadow-lv3,0 8px 24px rgba(0,0,0,0.35));border:1px solid rgba(255,255,255,0.12)'
       const header = document.createElement('div')
       header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-shrink:0'
       const titleEl = document.createElement('div')
@@ -787,7 +787,7 @@ export function sessionManageScript(): string {
       const restartBtn = document.createElement('button')
       restartBtn.type = 'button'
       restartBtn.textContent = '重启 dsh'
-      restartBtn.title = '重启后端 dsh web，使「取消归档 / 恢复」在官方侧栏生效'
+      restartBtn.dataset.tip = '重启后端 dsh web，使「取消归档 / 恢复」在官方侧栏生效'
       restartBtn.style.cssText = 'padding:4px 12px;border-radius:8px;border:none;cursor:pointer;font:inherit;font-size:12px;background:rgba(255,255,255,0.14);color:inherit'
       restartBtn.addEventListener('click', function () {
         askConfirm('重启 dsh', '将重启后端 dsh web 服务（约几秒），使「取消归档 / 恢复」在官方侧栏生效，当前窗口会自动重载。确定继续吗？', '重启', function () {

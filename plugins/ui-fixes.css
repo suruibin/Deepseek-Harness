@@ -1,0 +1,38 @@
+/* dsh-desktop built-in plugin: misc UI layout fixes (2026-09-06).
+ *
+ * 1. Session log button (top right): icon only — the "Session 日志" text
+ *    span is hidden, the svg glyph stays.
+ * 2. "查看已归档" header button: never shown. Its title attribute is only
+ *    set in some renders (empty on first boot) and its position differs
+ *    between the expanded header and the collapsed rail, but in both it is
+ *    the classless first child of .bhn1Oq_sectionHeader.
+ * 3. Trace view "工具" kind tag: dark brown chip → light yellow with a dark
+ *    amber label so it stays readable (label/icon set their own color).
+ */
+
+.nL4_yW_sessionLogButton > span {
+  display: none !important;
+}
+
+/* the button carries min-width: 111px for the two-char label; collapse it
+ * back to a square icon chip. Shift left too: dsh web pins a fixed 34px
+ * terminal toggle at right:8px top:8px that would sit on top of it. */
+.nL4_yW_sessionLogButton {
+  min-width: 0 !important;
+  padding: 6px 8px !important;
+  margin-right: 38px !important;
+}
+
+.bhn1Oq_sectionHeader > button:first-child {
+  display: none !important;
+}
+
+.Y0dWHa_kindTag.Y0dWHa_toolAmber,
+.Y0dWHa_toolAmber .Y0dWHa_kindTagIcon,
+.Y0dWHa_toolAmber .Y0dWHa_kindTagLabel {
+  color: rgb(138, 95, 10) !important;
+}
+
+.Y0dWHa_kindTag.Y0dWHa_toolAmber {
+  background: rgb(255, 243, 196) !important;
+}

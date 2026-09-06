@@ -130,7 +130,7 @@ export function wallpaperControlScript(): string {
         // teals/greens, warm accents, pastels, and dark darks.
         const PRESET_COLORS = [
           '#6a6f7a', '#9aa1af', '#5b8def', '#7c5cf0', '#2fb8a0', '#3f6f8f', '#d98e4a', '#c96a6a',
-          '#f5a8b8', '#e8a34a', '#7d8a4f', '#4aa3a8', '#9c6bb0', '#5f7bb5', '#b56a8c', '#4c5668',
+          '#f5a8b8', '#e8a34a', '#7d8a4f', '#4aa3a8', '#9c6bb0', '#5f7bb5', '#b56a8c',
         ]
         // ── Auto-rotate row (mounted ABOVE the background-opacity slider) ──
         const rotateEl = document.createElement('div')
@@ -142,7 +142,7 @@ export function wallpaperControlScript(): string {
               '<input type="checkbox" data-dsh-rotate-enable style="width:14px;height:14px;accent-color:#4176e6;cursor:pointer">' + rotateLabel +
             '</label>' +
             '<span style="color:var(--dsw-alias-label-tertiary);font-size:12px">' + intervalLabel + '</span>' +
-            '<input type="number" data-dsh-rotate-minutes min="1" max="1440" step="1" value="30" style="width:64px;background:rgba(39,46,62,0.6);color:var(--dsw-alias-label-primary);border:1px solid rgba(128,132,142,0.3);border-radius:8px;padding:4px 8px;font-size:12px;outline:none">' +
+            '<input type="number" data-dsh-rotate-minutes min="1" max="1440" step="1" value="30" style="width:56px;box-sizing:border-box;background:var(--dsh-glass-popup-bg,rgba(39,46,62,0.07));color:var(--dsw-alias-label-primary);border:1px solid rgba(128,132,142,0.3);border-radius:8px;padding:4px 8px;font-size:12px;outline:none">' +
             '<span style="color:var(--dsw-alias-label-tertiary);font-size:12px">' + minuteLabel + '</span>' +
           '</div>'
         // ── Wallpaper block (folder/pick/clear + colors + thumbnail grid) ──
@@ -160,13 +160,17 @@ export function wallpaperControlScript(): string {
           '<div data-dsh-color-row style="display:none;align-items:center;gap:10px;flex-wrap:wrap">' +
             '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;white-space:nowrap">' + colorLabel + '</span>' +
             '<div style="display:flex;flex-wrap:wrap;gap:8px">' +
-              PRESET_COLORS.map((c) => '<button data-dsh-color="' + c + '" title="' + c + '" style="width:24px;height:24px;border-radius:50%;background:' + c + ';border:2px solid rgba(255,255,255,0.25);cursor:pointer;padding:0;box-sizing:border-box"></button>').join('') +
+              PRESET_COLORS.map((c) => '<button data-dsh-color="' + c + '" data-tip="' + c + '" style="width:24px;height:24px;border-radius:50%;background:' + c + ';border:2px solid rgba(255,255,255,0.25);cursor:pointer;padding:0;box-sizing:border-box"></button>').join('') +
+              // 自定义颜色入口内联在预设色之后(同圆尺寸),悬停 data-tip 提示
+              // (毛玻璃气泡,由 ambientStyleScript 的悬浮提示引擎渲染)。
+              '<input type="color" data-dsh-color-custom value="#6a6f7a" data-tip="' + customColorLabel + '" style="width:24px;height:24px;border:2px solid rgba(255,255,255,0.25);border-radius:50%;padding:0;background:transparent;cursor:pointer;box-sizing:border-box">' +
             '</div>' +
-            '<span style="color:var(--dsw-alias-label-secondary);font-size:12px;white-space:nowrap">' + customColorLabel + '</span>' +
-            '<input type="color" data-dsh-color-custom value="#6a6f7a" title="' + customColorLabel + '" style="width:34px;height:26px;border:none;padding:0;background:transparent;cursor:pointer;border-radius:6px">' +
           '</div>' +
           '<div data-dsh-wallpaper-grid style="display:none;grid-template-columns:repeat(3,1fr);gap:6px;overflow-y:auto;padding-right:2px"></div>' +
           '<style>' +
+            // 原生取色器的色板填满圆形入口,与预设色块同形。
+            '[data-dsh-color-custom]::-webkit-color-swatch-wrapper { padding:0; }' +
+            '[data-dsh-color-custom]::-webkit-color-swatch { border:none; border-radius:50%; }' +
             '[data-dsh-wallpaper-grid] .dsh-wp-cell { position:relative; aspect-ratio:16/10; border-radius:8px; overflow:hidden; cursor:pointer; background:rgba(128,132,142,0.15); flex:none; }' +
             '[data-dsh-wallpaper-grid] .dsh-wp-cell img { width:100%; height:100%; object-fit:cover; display:block; }' +
             '[data-dsh-wallpaper-grid] .dsh-wp-cell .dsh-wp-badge { position:absolute; top:4px; right:4px; width:14px; height:14px; border-radius:50%; background:rgba(15,17,23,0.7); border:2px solid #4176e6; display:none; }' +

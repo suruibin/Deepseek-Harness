@@ -14,3 +14,15 @@
 [class*="_footArea"] [class*="_settingsArea"] [class*="_trigger"] svg path {
   fill: currentColor !important;
 }
+
+/* 消息底部：时间统计始终可见 + 所有背景彻底透明 */
+[data-time-hover-root] :is(.p-xYUq_timeStart,.p-xYUq_timeEnd),
+[data-time-hover-root] .p-xYUq_actions,
+[data-time-hover-root] .p-xYUq_runTimeDot,
+[data-time-hover-root] .p-xYUq_action {
+  background: transparent !important;
+  background-color: transparent !important;
+  opacity: 1 !important;
+  transition: none !important;
+  border: none !important;
+}

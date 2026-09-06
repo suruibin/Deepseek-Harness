@@ -153,7 +153,7 @@ export function terminalScript(): string {
       const b = document.createElement('button')
       b.type = 'button'
       b.innerHTML = label
-      if (title !== undefined) b.title = title
+      if (title !== undefined) b.dataset.tip = title
       b.style.cssText = css
       return b
     }
@@ -460,7 +460,7 @@ export function terminalScript(): string {
       const close = document.createElement('span')
       close.textContent = '×'
       close.style.cssText = 'cursor:pointer;opacity:0.6;padding:0 2px;border-radius:3px'
-      close.title = '关闭 / Close'
+      close.dataset.tip = '关闭 / Close'
       b.append(dot, label, close)
       b.addEventListener('click', (e) => {
         if (e.target === close) return
@@ -648,7 +648,7 @@ export function terminalScript(): string {
       dirInput.type = 'text'
       dirInput.value = tab.cwd !== null ? tab.cwd : ''
       dirInput.placeholder = '目录 (留空=项目根)'
-      dirInput.title = '工作目录 / Working directory'
+      dirInput.dataset.tip = '工作目录 / Working directory'
       dirInput.style.cssText = 'width:150px;font-size:11px;background:rgba(255,255,255,0.08);border:1px solid rgba(65,118,230,0.3);color:var(--dsw-alias-label-secondary);border-radius:4px;padding:1px 4px;margin-left:6px'
       labelEl.append(input, dirInput)
       const finish = (save) => {
@@ -832,9 +832,9 @@ export function terminalScript(): string {
     const featureVisible = (key) => {
       try {
         const raw = localStorage.getItem(key)
-        if (raw !== null) return JSON.parse(raw) !== false
+        if (raw !== null) return JSON.parse(raw) === true
       } catch {}
-      return true
+      return false
     }
     const applyPanelVisibility = () => {
       const filesOn = featureVisible('dsh-desktop-files-visible')
@@ -1008,7 +1008,7 @@ export function terminalScript(): string {
           const b = badgeFor(xy)
           const badge = document.createElement('span')
           badge.textContent = b.ch
-          badge.title = b.label
+          badge.dataset.tip = b.label
           badge.style.cssText = 'margin-left:auto;flex:none;font-size:10px;font-weight:bold;color:' + b.color
           row.append(badge)
         }
