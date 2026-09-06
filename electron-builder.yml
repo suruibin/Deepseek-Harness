@@ -17,6 +17,9 @@ asar: true
 asarUnpack:
   - lib/reaper.js
   - lib/process-tree.js
+# Trim locale packs to en-US/zh-CN/zh-TW (saves ~10MB compressed in the
+# AppImage; see scripts/afterPack.cjs). .cjs because the package is ESM.
+afterPack: scripts/afterPack.cjs
 win:
   icon: build/icon.png
   target:

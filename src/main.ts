@@ -18,7 +18,7 @@ import { alphaControlScript, ambientStyleScript, glassGuardScript, glassWindowOp
 import { featureControlScript, glassControlsScript, inputHistoryScript, themeSettingsScript, whaleSprayScript } from './misc-scripts.ts'
 import { terminalScript } from './terminal-scripts.ts'
 import { wallpaperControlScript, wallpaperLayerScript } from './wallpaper-scripts.ts'
-import { detectExistingServer, resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
+import { detectExistingServer, readDshVersion, resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
 import { restartWebServer, spawnReaper, STDERR_TAIL_LIMIT } from './server-restart.ts'
 import { mergePlugins, pluginsCssScript, readPluginDir } from './plugins.ts'
 import { PtyRegistry } from './pty-registry.ts'
@@ -79,6 +79,8 @@ let mainWindow: BrowserWindow | undefined
 let tray: Tray | undefined
 let server: ChildProcess | undefined
 let serverUrl: URL | undefined
+// dsh CLI 版本（`dsh --version`），boot 时异步探测，用于主题面板页脚展示。
+let dshVersion = ''
 let quitting = false
 // Set by the first fatal() so one root cause cannot show duplicate modal
 // dialogs or dispatch process-tree teardown twice.
@@ -392,7 +394,7 @@ function createWindow(url: URL): void {
       void applyGlass(window)
       // Injection order matters: everything must follow applyGlass's theme.
       void injectBatch(window, [
-        themeSettingsScript,
+        () => themeSettingsScript(app.getVersion(), dshVersion),
         alphaControlScript,
         wallpaperControlScript,
         featureControlScript,
@@ -514,6 +516,8 @@ function fatal(error: Error): void {
 
 async function boot(): Promise<void> {
   const launch = resolveWebLaunch({ env: process.env })
+  // dsh 版本探测与 server 启动并发执行；注入发生在页面加载后，届时早已完成。
+  void readDshVersion(launch).then((v) => { dshVersion = v })
   // 启动 dsh web 前自动检测并修复损坏的会话日志 (seq 缺口 / 多写流交错),
   // 否则 GUI 打开历史会话时会报 "corrupt session log: seq gap" 而失败。
   // 修复只依赖磁盘上的会话文件，与 server 启动无依赖，故用 setImmediate

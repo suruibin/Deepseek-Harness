@@ -5,6 +5,7 @@ import {
   childExited,
   detectExistingServer,
   parseReadyLine,
+  readDshVersion,
   resolveWebLaunch,
   waitForHttpOk,
   waitForReadyLine,
@@ -188,6 +189,14 @@ describe('waitForHttpOk', () => {
     await expect(waitForHttpOk(new URL('http://127.0.0.1:1/'), { fetchImpl, timeoutMs: 100, pollIntervalMs: 5 })).resolves.toBeUndefined()
   })
 
+  it('resolves on 303 without following the redirect (dsh 0.1.2 token-URL cookie flow)', async () => {
+    const fetchImpl = vi.fn(async (_url: unknown, init?: { redirect?: string }) => {
+      expect(init?.redirect).toBe('manual')
+      return new Response('see other', { status: 303, headers: { location: '/' } })
+    })
+    await expect(waitForHttpOk(new URL('http://127.0.0.1:1/'), { fetchImpl, timeoutMs: 100, pollIntervalMs: 5 })).resolves.toBeUndefined()
+  })
+
   it('resolves once a failing server recovers', async () => {
     let attempts = 0
     const fetchImpl = vi.fn(async () => {
@@ -272,5 +281,19 @@ describe('detectExistingServer', () => {
     })
     const url = await detectExistingServer({ env: { DSH_DESKTOP_GUI_URL: 'http://127.0.0.1:9999/' }, fetchImpl, timeoutMs: 10 })
     expect(url?.href).toBe('http://127.0.0.1:3080/')
+  })
+})
+
+describe('readDshVersion', () => {
+  it('swaps the web subcommand for --version and returns the first stdout line', async () => {
+    // `node --version` prints one line, exercising the same swap path as
+    // `node <bin> --version` for a DSH_HOME launch.
+    const version = await readDshVersion({ command: process.execPath, args: ['web'] }, 5_000)
+    expect(version).toMatch(/^v\d/)
+  })
+
+  it('resolves "" instead of throwing when the command fails', async () => {
+    const version = await readDshVersion({ command: 'dsh-desktop-definitely-not-a-binary', args: ['web'] }, 2_000)
+    expect(version).toBe('')
   })
 })

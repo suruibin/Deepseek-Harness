@@ -92,6 +92,25 @@ export function resolveWebLaunch(options: LaunchEnvironment): WebServerLaunch {
 }
 
 /**
+ * Ask the resolved `dsh` command for its version, reusing the launch
+ * descriptor that boots the server (the `web` subcommand is swapped for
+ * `--version`, so `DSH_BIN`/`DSH_HOME`/PATH all resolve the same way).
+ * Resolves '' when the probe fails or times out: the version label is
+ * cosmetic and must never block or break boot.
+ */
+export async function readDshVersion(launch: Pick<WebServerLaunch, 'command' | 'args'>, timeoutMs = 5_000): Promise<string> {
+  const args = [...launch.args]
+  const webAt = args.indexOf('web')
+  if (webAt >= 0) args[webAt] = '--version'
+  else args.push('--version')
+  return new Promise((resolve) => {
+    execFile(launch.command, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 64 * 1024 }, (error, stdout) => {
+      resolve(error ? '' : (stdout.trim().split(/\r?\n/)[0] ?? ''))
+    })
+  })
+}
+
+/**
  * Extract the server URL from one readiness line — `dsh web: http://127.0.0.1:PORT`
  * with an optional LAN note — or undefined for any other line. The URL must
  * carry an explicit port: the readiness line always does, and a port-less
@@ -212,8 +231,12 @@ export async function waitForHttpOk(url: URL, options: HttpOkOptions = {}): Prom
   let lastError: unknown = new Error('no attempt made')
   while (Date.now() < deadline) {
     try {
-      const response = await fetchImpl(url, { signal: AbortSignal.timeout(2_000) })
+      // dsh 0.1.2 answers a valid token URL with 303 + session cookie and
+      // redirects to /; following it loses the cookie (fetch has no jar) and
+      // lands on 401, so the 303 itself is the readiness signal.
+      const response = await fetchImpl(url, { signal: AbortSignal.timeout(2_000), redirect: 'manual' })
       if (response.ok) return
+      if (response.status === 303) return
       lastError = new Error(`HTTP ${response.status}`)
     } catch (error) {
       lastError = error

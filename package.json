@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop-electron",
   "description": "Electron desktop shell for the DeepSeek Harness Web GUI: spawns dsh web and hosts it in a standalone window with tray residency",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "main": "lib/main.js",
