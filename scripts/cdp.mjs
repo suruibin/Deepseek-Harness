@@ -42,7 +42,10 @@ ws.addEventListener('open', async () => {
   try {
     switch (cmd) {
       case 'eval': {
-        const r = await ev(args.join(' '))
+        // trailing `--await`: awaitPromise (expression may return a Promise)
+        const wantAwait = args[args.length - 1] === '--await'
+        const expr = wantAwait ? args.slice(0, -1).join(' ') : args.join(' ')
+        const r = await ev(expr, wantAwait)
         console.log(typeof r === 'string' ? r : JSON.stringify(r))
         break
       }

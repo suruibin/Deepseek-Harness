@@ -3,9 +3,11 @@
  *
  * wallpaperLayerScript() mounts the translucent wallpaper layer under the
  * glass canvas; wallpaperControlScript() drives the picker/apply/clear flow
- * in the hosted page. Each returns a JS string executed via inject() in
- * main.ts. Self-contained: no imports, no shared module state.
+ * in the hosted page.* Each returns a JS string executed via inject() in
+ * main.ts. Self-contained: no imports, no shared module state. The shared
+ * mut-bus snippet is prepended so body-wide observers collapse into one.
  */
+import { mutBusSnippet } from './mut-bus.ts'
 /**
  * The wallpaper layer injected into the hosted page: a fixed, full-viewport
  * div at the bottom of the stacking order (z-index -1) that sits between the
@@ -19,10 +21,11 @@
  * layer if the SPA re-renders it away, mirroring the glass guard's pattern.
  */
 export function wallpaperLayerScript(): string {
-  return `(() => {
-    if (window.__dshWallpaperObserver) {
-      window.__dshWallpaperObserver.disconnect()
-      window.__dshWallpaperObserver = undefined
+  return mutBusSnippet() + `
+    ;(() => {
+    if (typeof window.__dshWallpaperOff === 'function') {
+      try { window.__dshWallpaperOff() } catch (e) {}
+      window.__dshWallpaperOff = undefined
     }
     // Built-in frosted backdrop when no user wallpaper is set: backdrop-filter
     // can only blur content painted inside the page (not the OS desktop behind
@@ -60,9 +63,9 @@ export function wallpaperLayerScript(): string {
       pending = true
       requestAnimationFrame(() => { pending = false; ensure() })
     }
-    const obs = new MutationObserver(schedule)
-    window.__dshWallpaperObserver = obs
-    obs.observe(document.body, { childList: true, subtree: true })
+    // Shared mut-bus subscription replaces the former private body-wide observer.
+    const offMut = window.__dshMutBus.subscribe(schedule)
+    window.__dshWallpaperOff = offMut
     window.dshDesktop.wallpaper.get().then((res) => {
       const r = res
       window.__dshWallpaperUrl = (r !== null && typeof r === 'object' && typeof r.url === 'string') ? r.url : null
@@ -89,10 +92,11 @@ export function wallpaperLayerScript(): string {
  * the preload bridge; "remove" clears the wallpaper.
  */
 export function wallpaperControlScript(): string {
-  return `(() => {
-    if (window.__dshWallpaperControlObserver) {
-      window.__dshWallpaperControlObserver.disconnect()
-      window.__dshWallpaperControlObserver = undefined
+  return mutBusSnippet() + `
+    ;(() => {
+    if (typeof window.__dshWallpaperControlOff === 'function') {
+      try { window.__dshWallpaperControlOff() } catch (e) {}
+      window.__dshWallpaperControlOff = undefined
     }
     const mount = () => {
       if (window.dshDesktop === undefined) return
@@ -133,16 +137,24 @@ export function wallpaperControlScript(): string {
           '#f5a8b8', '#e8a34a', '#7d8a4f', '#4aa3a8', '#9c6bb0', '#5f7bb5', '#b56a8c',
         ]
         // ── Auto-rotate row (mounted ABOVE the background-opacity slider) ──
+        // Pre-fill from the session mirror BEFORE building the row: the row
+        // must paint with the persisted interval on its first frame, because
+        // wallpaper.get() is async and would let the hardcoded "30" flash for
+        // a moment before jumping to the real value (用户: 打开主题设置 时间会
+        // 瞬间跳到最新设置的值).
+        const rotCached = (() => { try { return JSON.parse(localStorage.getItem('dsh-desktop-rotate-state') || 'null') } catch { return null } })()
+        const rotEn = rotCached !== null && rotCached.enabled === true
+        const rotMins = rotCached !== null && Number(rotCached.minutes) >= 1 ? Math.round(Number(rotCached.minutes)) : 30
         const rotateEl = document.createElement('div')
         rotateEl.dataset.dshRotate = 'true'
         rotateEl.style.cssText = 'display:flex;flex-direction:column;gap:6px;padding:16px 0'
         rotateEl.innerHTML =
           '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
             '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--dsw-alias-label-primary);font-size:13px">' +
-              '<input type="checkbox" data-dsh-rotate-enable style="width:14px;height:14px;accent-color:#4176e6;cursor:pointer">' + rotateLabel +
+              '<input type="checkbox" data-dsh-rotate-enable' + (rotEn ? ' checked' : '') + ' style="width:14px;height:14px;accent-color:#4176e6;cursor:pointer">' + rotateLabel +
             '</label>' +
             '<span style="color:var(--dsw-alias-label-tertiary);font-size:12px">' + intervalLabel + '</span>' +
-            '<input type="number" data-dsh-rotate-minutes min="1" max="1440" step="1" value="30" style="width:56px;box-sizing:border-box;background:var(--dsh-glass-popup-bg,rgba(39,46,62,0.07));color:var(--dsw-alias-label-primary);border:1px solid rgba(128,132,142,0.3);border-radius:8px;padding:4px 8px;font-size:12px;outline:none">' +
+            '<input type="number" data-dsh-rotate-minutes min="1" max="1440" step="1" value="' + rotMins + '" style="width:56px;box-sizing:border-box;background:var(--dsh-glass-popup-bg,rgba(39,46,62,0.07));color:var(--dsw-alias-label-primary);border:1px solid rgba(128,132,142,0.3);border-radius:8px;padding:4px 8px;font-size:12px;outline:none">' +
             '<span style="color:var(--dsw-alias-label-tertiary);font-size:12px">' + minuteLabel + '</span>' +
           '</div>'
         // ── Wallpaper block (folder/pick/clear + colors + thumbnail grid) ──
@@ -239,6 +251,9 @@ export function wallpaperControlScript(): string {
         const persistRotate = () => {
           const minutes = Number(rotateMin.value) || 30
           const folder = (() => { try { return localStorage.getItem('dsh-desktop-wallpaper-folder') } catch { return null } })()
+          // Session mirror: the next panel open pre-fills from this BEFORE its
+          // first paint, so the interval never flashes the hardcoded default.
+          try { localStorage.setItem('dsh-desktop-rotate-state', JSON.stringify({ enabled: rotateCb.checked, minutes })) } catch {}
           window.dshDesktop.wallpaper.setRotate({ enabled: rotateCb.checked, minutes, folder: folder || null })
         }
         const ensurePool = () => {
@@ -456,9 +471,16 @@ export function wallpaperControlScript(): string {
               rotateCb.checked = r.enabled === true
               const mins = Number(r.minutes)
               if (Number.isFinite(mins) && mins >= 1) rotateMin.value = String(mins)
+              // Keep the session mirror in sync with the persisted truth so the
+              // pre-fill stays correct even across app restarts.
+              try { localStorage.setItem('dsh-desktop-rotate-state', JSON.stringify({ enabled: r.enabled === true, minutes: Number.isFinite(mins) && mins >= 1 ? mins : 30 })) } catch {}
               // Resume the interval without advancing the wallpaper now —
               // reopening the panel must not change the background.
               if (rotateCb.checked) restartRotate()
+            } else {
+              // Nothing persisted: drop any stale mirror so the next open does
+              // not pre-fill from an outdated value.
+              try { localStorage.removeItem('dsh-desktop-rotate-state') } catch {}
             }
             // The folder is persisted in glass-settings.json, which survives
             // the per-launch random port (unlike localStorage). Mirror it back
@@ -489,10 +511,10 @@ export function wallpaperControlScript(): string {
       pending = true
       requestAnimationFrame(() => { pending = false; mount() })
     }
-    const obs = new MutationObserver(schedule)
-    window.__dshWallpaperControlObserver = obs
-    // childList: row (re)mounts; characterData: locale switches swap text in
-    // place, which must re-sync the mounted control's title.
-    obs.observe(document.body, { childList: true, subtree: true, characterData: true })
+    // Shared mut-bus subscription: childList (row re-mounts) and characterData
+    // (locale switches swap text in place, re-syncing the mounted control's
+    // title) both flow through the bus's rAF-debounced flush.
+    const offMut = window.__dshMutBus.subscribe(schedule)
+    window.__dshWallpaperControlOff = offMut
   })()`
 }

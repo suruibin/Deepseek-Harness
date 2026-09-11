@@ -3,10 +3,14 @@
  *
  * terminalScript() returns a JS string executed in the hosted page via
  * inject() in main.ts: it mounts the underlay + dock and drives xterm.js.
- * Self-contained: no imports, no shared module state.
+ * Self-contained: no imports, no shared module state. The shared mut-bus
+ * snippet is prepended so body-wide observers collapse into one.
  */
+import { mutBusSnippet } from './mut-bus.ts'
+
 export function terminalScript(): string {
-  return `(() => {
+  return mutBusSnippet() + `
+    ;(() => {
     if (window.__dshTerminal) {
       window.__dshTerminal.dispose()
       window.__dshTerminal = undefined
@@ -37,9 +41,16 @@ export function terminalScript(): string {
     // copies); it is re-positioned with fixed CSS anchored to the footer's
     // Settings trigger.
     const moveSessionLog = () => {
-      const sessBtn = Array.from(document.querySelectorAll('button')).find((b) => /session log/i.test((b.title || '') + (b.textContent || '')))
+      // Fast path: the button carries a stable class fragment
+      // ([class*="_sessionLogButton"], styled by dsh-sesslog-style below), so
+      // a single hash lookup finds it. Full-scan fallback only if that misses
+      // (e.g. an upstream class rename) keeps the move resilient. The nullish
+      // coalesce also treats the fast path's null miss as "try fallback"
+      // (querySelector misses with null; .find misses with undefined).
+      const sessBtn = document.querySelector('button[class*="_sessionLogButton"]')
+        ?? Array.from(document.querySelectorAll('button')).find((b) => /session log/i.test((b.title || '') + (b.textContent || '')))
       const footArea = document.querySelector('[class*="_footArea"]')
-      if (sessBtn === undefined || footArea === null) return false
+      if (sessBtn == null || footArea === null) return false
       // Sidebar collapsed: the footer shrinks to a rail. Only the Session
       // log button hides (the Settings icon and the memory-panel button
       // stay as-is). The Settings trigger shrinks to its rail size (36px)
@@ -102,8 +113,10 @@ export function terminalScript(): string {
       sessPending = true
       requestAnimationFrame(() => { sessPending = false; moveSessionLog(); watchSessLog() })
     }
-    const sessObs = new MutationObserver(sessSchedule)
-    sessObs.observe(document.body, { childList: true, subtree: true })
+    // Shared mut-bus subscription replaces the former private body-wide
+    // observer: one page-level MutationObserver wakes all injected scripts
+    // in a single rAF flush.
+    const offSessMut = window.__dshMutBus.subscribe(sessSchedule)
     // Collapsing the sidebar slides the footer off-screen; the Session log
     // button must hide along with it. Class/style mutations can miss the
     // width-only collapse animation, so observe the sidebar's size.
@@ -235,8 +248,8 @@ export function terminalScript(): string {
       rebuildPending = true
       requestAnimationFrame(rebuildTick)
     }
-    const sidebarRebuildObs = new MutationObserver(scheduleRebuild)
-    sidebarRebuildObs.observe(document.body, { childList: true, subtree: true })
+    // Shared mut-bus subscription replaces the former private body-wide observer.
+    const offRebuildMut = window.__dshMutBus.subscribe(scheduleRebuild)
 
     // ── Terminal dock (bottom bar right of the conversation sidebar) ──
     const DOCK_H = 340

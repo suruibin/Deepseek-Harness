@@ -18,6 +18,7 @@
 import type { BrowserWindowConstructorOptions } from 'electron'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { mutBusSnippet } from './mut-bus.ts'
 
 export interface GlassSettings {
   /** 0..1 — background tint opacity on Linux; ignored on Windows/macOS. */
@@ -65,7 +66,7 @@ export const DEFAULT_THEME: GlassTheme = 'system'
  * therefore a dark blue, not a pale one.
  */
 const SURFACE_DARK: Record<string, string> = {
-  '--dsw-alias-bg-layer-2': 'rgb(32, 38, 52)', // dialog panels, pills
+  '--dsw-alias-bg-layer-2': 'var(--dsh-glass-popup-bg, rgba(39, 46, 62, 0.07))', // dialog panels, pills — frosted via the popup family (用户: 确认/选择弹窗、问题卡片没有毛玻璃)
   '--dsw-alias-bg-layer-3': 'var(--dsh-glass-popup-bg, rgba(39, 46, 62, 0.07))', // plugin/config cards, config inputs
   '--dsw-alias-bg-module-platform': 'var(--dsh-glass-popup-bg, rgba(39, 46, 62, 0.07))', // appearance selected cube, badges
   '--dsw-specific-menu': 'var(--dsh-glass-popup-bg, rgba(39, 46, 62, 0.07))', // dropdown menus
@@ -83,7 +84,7 @@ const SURFACE_DARK: Record<string, string> = {
 }
 
 const SURFACE_LIGHT: Record<string, string> = {
-  '--dsw-alias-bg-layer-2': 'rgb(238, 241, 249)',
+  '--dsw-alias-bg-layer-2': 'var(--dsh-glass-popup-bg, rgb(238, 241, 249))', // dialog panels, pills — the popup glass var is theme-neutral (light blue), so both branches share it
   '--dsw-alias-bg-layer-3': 'rgb(233, 237, 247)',
   '--dsw-alias-bg-module-platform': 'rgb(233, 237, 247)',
   '--dsw-specific-menu': 'rgb(233, 237, 247)',
@@ -270,10 +271,11 @@ export function glassGuardScript(alpha: number): string {
  * which persists the choice and re-applies the glass guard.
  */
 export function alphaControlScript(): string {
-  return `(() => {
-    if (window.__dshAlphaControlObserver) {
-      window.__dshAlphaControlObserver.disconnect()
-      window.__dshAlphaControlObserver = undefined
+  return mutBusSnippet() + `
+    ;(() => {
+    if (typeof window.__dshAlphaControlOff === 'function') {
+      try { window.__dshAlphaControlOff() } catch (e) {}
+      window.__dshAlphaControlOff = undefined
     }
     const MOUNTED = '[data-dsh-glass-alpha]'
     const mount = () => {
@@ -325,17 +327,29 @@ export function alphaControlScript(): string {
           const pct = value * 100
           input.style.setProperty('--dsh-alpha-fill', pct.toFixed(1) + '%')
         }
+        // Pre-fill from the session mirror BEFORE mount: the slider's first
+        // paint must already show the persisted alpha, because getAlpha() is
+        // async and the bare slider would flash its 0% default first
+        // (用户: 背景透明度有从默认值跳到设置值的过程).
+        const prefill = (() => { try { const v = Number(localStorage.getItem('dsh-desktop-glass-alpha')); return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : null } catch { return null } })()
+        if (prefill !== null) { input.value = String(prefill); render(prefill) }
         let raf = 0
         input.addEventListener('input', () => {
           const value = Number(input.value)
           render(value)
           cancelAnimationFrame(raf)
-          raf = requestAnimationFrame(() => { window.dshDesktop.setAlpha(value) })
+          raf = requestAnimationFrame(() => {
+            try { localStorage.setItem('dsh-desktop-glass-alpha', String(value)) } catch {}
+            window.dshDesktop.setAlpha(value)
+          })
         })
         window.dshDesktop.getAlpha().then((value) => {
           const clamped = Math.min(1, Math.max(0, value))
           input.value = String(clamped)
           render(clamped)
+          // Reconcile the mirror with the persisted truth (covers external
+          // changes to glass-settings.json while the page was closed).
+          try { localStorage.setItem('dsh-desktop-glass-alpha', String(clamped)) } catch {}
         }).catch(() => {})
         // Cursor effect toggle + per-pane mode: persisted in localStorage and
         // applied immediately by dispatching a change event the spray script
@@ -465,11 +479,9 @@ export function alphaControlScript(): string {
       pending = true
       requestAnimationFrame(() => { pending = false; mount() })
     }
-    const obs = new MutationObserver(schedule)
-    window.__dshAlphaControlObserver = obs
-    // childList: row (re)mounts; characterData: locale switches swap text in
-    // place, which must re-sync the mounted control's title.
-    obs.observe(document.body, { childList: true, subtree: true, characterData: true })
+    // Shared mut-bus subscription replaces the former private body-wide observer.
+    const offMut = window.__dshMutBus.subscribe(schedule)
+    window.__dshAlphaControlOff = offMut
   })()`
 }
 
@@ -556,7 +568,7 @@ export function ambientStyleScript(): string {
       // edge across the 4px gap and renders as a darker band on it.
       '[class*=\"_centerCol\"] {',
       '  border-radius: 16px !important;',
-      '  margin: 8px 8px 8px 0 !important;',
+      '  margin: 8px 0 8px 0 !important;',
       '  overflow: hidden !important;',
       '}',
       '[class*=\"_centerCol\"] [class*=\"_root\"] {',
@@ -756,8 +768,44 @@ export function ambientStyleScript(): string {
       // above (its default popup-family alpha of 0.07 was nearly transparent
       // and looked unfrosted, user: 背景没有磨砂效果). The context-usage popup
       // (上下文已用, JObwrW_panel) rides the same variable via
-      // --dsw-specific-menu and joins the family.
-      '[class*=\"_menu\"], [class*=\"_sideTop_\"], [class*=\"JObwrW_panel\"], [class*=\"_list_\"], [class*=\"_submenu_\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
+      // --dsw-specific-menu and joins the family. The composer stat popups
+      // (输入框下方统计行: 1 轮 1 步 / 缓存命中, bRhRbq_panel) get the same
+      // treatment — DSH paints them with a flat 0.14 tint and no blur, user:
+      // 也要设置成毛玻璃效果 跟其他弹出窗一样.
+      '[class*=\"_menu\"], [class*=\"_sideTop_\"], [class*=\"JObwrW_panel\"], [class*=\"_list_\"], [class*=\"_submenu_\"], [class*=\"bRhRbq_panel\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
+      // Modal dialogs and confirm/question cards: the generic dialog
+      // (_dialog_w1urq_22) paints var(--dsw-alias-bg-layer-2), and the
+      // confirmation card (_confirmation_1nu42_1) composes from the same
+      // alias — that alias was pinned to an OPAQUE rgb(32,38,52) in the
+      // surface maps above, so every modal read as a solid slab (用户: 弹出
+      // 确认或者让用户选择的弹窗 问题卡片 这个界面没有毛玻璃效果). The maps
+      // now point the alias at the popup glass var; this rule adds the blur
+      // the official dialog rule never had (半透明背景 + 无模糊 = 清晰透视,
+      // 不算毛玻璃). Both substrings are page-unique (verified in the CSS
+      // bundle: no _xxx_dialog_ / _xxx_confirmation_ variants exist).
+      '[class*=\"_dialog_\"], [class*=\"_confirmation_\"] { backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
+      // Remaining floating surfaces (user: 完整查询所有弹窗统一改成弹窗滑块
+      // 控制的毛玻璃). Exhaustive CSS-bundle sweep of position:fixed/high-z
+      // classes found four gaps beside the dialog family above:
+      //   _float_17p4l_306    pane floating panel  — bg already bg-layer-2
+      //                       (frosted since the alias fix), missing blur
+      //   _onboardingStage_   onboarding card      — bg is bg-layer-1 (glass
+      //                       via the dynamic alias), missing blur
+      //   _toast_e5v0f_6      toast notice         — opaque contrast-fill;
+      //                       joins the popup glass var. Its inverted white
+      //                       text stays: the popup tint is a 7% deep-blue
+      //                       wash over the page's own dark ground, so white
+      //                       keeps its contrast
+      //   _bubble_1nw3t_1     tooltip bubble       — already a translucent
+      //                       dark fill (--dsw-alias-tooltip-bg 0.62); adding
+      //                       the blur turns it into dark frosted glass while
+      //                       keeping white text readable
+      // All four take the 弹窗 slider's filter. _floatR* / _floatT* /
+      // _floatB* don't match the "_float_" substring; _portal_ / _copyAnchor_
+      // / _onboardingMask_ (official blur(2px)) / _mask_w1urq_ (official
+      // --dsw-mask-blur) have no fill or keep their official blur.
+      '[class*=\"_float_\"], [class*=\"_onboardingStage_\"], [class*=\"_bubble_1nw3t\"], [class*=\"_toast_\"] { backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
+      '[class*=\"_toast_\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; }',
       // Model-picker provider title rows (DeepSeek / Ollama / 智谱 GLM /
       // FreeToken, _7KE1Ra_groupTitle): DSH paints them with an OPAQUE
       // rgb(39,46,62) band. They sit INSIDE the blurred menu, so a
@@ -892,7 +940,12 @@ export function ambientStyleScript(): string {
       // maskFadeKeeper 在移除同帧追加渐隐替身层补 fade-out。
       '@keyframes dshMaskIn { from { opacity: 0 } to { opacity: 1 } }',
       '@keyframes dshMaskOut { from { opacity: 1 } to { opacity: 0 } }',
-      '[class*=\"VOzbGW_mask\"] { animation: dshMaskIn 0.18s ease-out !important; }',
+      '[class*="VOzbGW_mask"] { animation: dshMaskIn 0.18s ease-out !important; }',
+      // The mask (full-viewport rgba(0,0,0,0.5)) only DIMS the page behind the
+      // settings modal — sharp dark content (code blocks) still read through.
+      // A modest frosted blur on the mask melts that background into the dim,
+      // so nothing sharp competes with the modal (user: bash 窗口显示在设置界面).
+      '[class*="VOzbGW_mask"] { backdrop-filter: blur(14px) saturate(1.2) !important; -webkit-backdrop-filter: blur(14px) saturate(1.2) !important; }',
       // Scroll-to-bottom floating button (回到底部, Md3f7G_toBottom, rides
       // inside the sticky Md3f7G_toBottomSlot): DSH paints it with
       // --dsw-alias-button-floating-fill (rgb(32,38,52), too dark on the
@@ -923,7 +976,122 @@ export function ambientStyleScript(): string {
       // is uniform from the logo row to the footer — no more visible seam
       // above the settings button), yet a pseudo-element is not a DOM
       // ancestor, so the overlay's containing block stays the viewport.
-      '[class*=\"_centerCol\"] { position: relative !important; background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; }',
+      '[class*="_centerCol"] { position: relative !important; background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; }',
+      // The official right sidebar (dsh 0.1.5-rc.1, section._pane_<hash>) joins
+      // the main glass family: its fill follows the 主界面 background slider
+      // (用户: 侧边栏透明度不受背景透明度控制), and its blur rides a ::before
+      // overlay — same pattern as the sidebar/center columns, so no backdrop-
+      // filter lands on the element itself (containing-block hazard for any
+      // fixed descendant). The 16px radius + 8px margin + overflow:hidden make
+      // it the same floating rounded card as the sidebar/center columns
+      // (用户: 右侧的打开侧边栏也想要四周倒圆角).
+      // Left margin is 4px (not 8): together with centerCol's margin-right:0
+      // it gives a 4px card-to-card gap to the center column, matching the
+      // 4px sidebar→center gap so both seams read identical
+      // (用户: 右侧侧边栏 跟中间输入框 间距太宽了 — was 8+8=16px).
+      '[class*="_pane_"] { position: relative !important; border-radius: 16px !important; margin: 8px 8px 8px 4px !important; overflow: hidden !important; background-color: var(--dsh-glass-main-bg, rgba(15,17,23,0.35)) !important; }',
+      // The pane's top tab (tabStrip child, class _tab_17p4l_156) ships an
+      // opaque dark fill rgb(44,44,46) (用户: 右侧侧边栏顶部的标签页文字背景
+      // 是暗黑色的) — put it on the frosted popup family so it follows the
+      // 弹窗 slider like every other floating surface. Selector is unique:
+      // no other element on the page carries the "_tab_" substring.
+      '[class*="_tab_"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
+      '[class*="_pane_"]::before { content: "" !important; position: absolute !important; inset: 0 !important; border-radius: inherit !important; pointer-events: none !important; z-index: -1 !important; backdrop-filter: var(--dsh-glass-column-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-column-filter) !important; }',
+      // The vertical line on the pane's left edge (用户: 侧边栏左侧有条竖线
+      // 我不要) was P3OORG_panel's own 1px border-left — killing it below is
+      // enough. The resizer strips (pI_x6G_handle, frame's last children)
+      // are visually zero-width and carry the drag-to-resize interaction
+      // (用户: 右侧侧边栏展开后不能调整大小了) — they MUST stay mounted.
+      // ALSO drop the pane shell P3OORG_panel (position:absolute) from the
+      // official z-index:10 to 0: the sidebar column it must sit under is
+      // z-index:1, and with the shell above it, its transparent surface
+      // covered the hosted settings panel's right side and ate every click
+      // there (用户: 设置界面右侧跟侧边栏重叠的地方无法点击) — the fixed
+      // settings overlay's 2147482000 z only counts INSIDE the sidebar's
+      // z:1 stacking context.
+      // Shell is also transparent: its official fixed rgba(15,17,23,0.45)
+      // painted UNDER the hosted _pane_ glass card, so the panel stayed dark
+      // while 主题设置→背景透明度 slid toward 0 — the center column followed
+      // --dsh-glass-main-bg but this shell did not (用户: 右侧侧边栏背景跟
+      // 中间输入框的透明度不一致). The _pane_ card inside carries the real
+      // variable-driven glass, matching centerCol's structure.
+      '[class*="P3OORG_panel"] { border-left: none !important; z-index: 0 !important; background-color: transparent !important; }',
+      // While the hosted settings panel is open the official right sidebar
+      // must step aside ENTIRELY, not just sit under the overlay: the frosted
+      // settings page let the pane show through its glass and crowded the
+      // page's right side (用户: 设置界面不能显示在右侧侧边栏上). Pure CSS:
+      // the VOzbGW_overlay mounts INSIDE the frame (sidebarCol → footArea →
+      // settingsArea), so :has() sees it and hides the pane; on close the
+      // overlay unmounts and the pane is back on the next style recalc. No
+      // JS flag involved — a previous rAF-driven <html> flag variant stuck
+      // at "1" whenever the window went background before the heal tick ran
+      // and hid the pane forever (用户: 右边侧边栏里面是空的).
+      '[class*="pI_x6G_frame"]:has([class*="VOzbGW_overlay"]) [class*="_pane_"] { display: none !important; }',
+      // The resize handles must hide with the pane: they are direct frame
+      // children at z-index:11, ABOVE the sidebar column's z:1 stacking
+      // context that contains the settings overlay — so with the right panel
+      // open, the pane handle (pinned to the pane's left edge by
+      // paneWidthScript, right beside the center input) floated over the
+      // settings page and every drag there resized the panel instead
+      // (用户: 展开右侧侧边栏时点设置界面 中间输入框的调整滑块透过设置界面).
+      '[class*="pI_x6G_frame"]:has([class*="VOzbGW_overlay"]) [class*="pI_x6G_handle"] { display: none !important; }',
+      // The SPA's OWN conversation-width drag strips (wSkVaW_widthHandle, two
+      // 40px-wide full-height col-resize strips flanking the chat content,
+      // z-index:8) also sit ABOVE the settings overlay's z:1 stacking context:
+      // the right one lands exactly on the settings modal's scrollbar area, so
+      // scrolling/dragging the settings page hit them and resized the chat
+      // width instead (用户: 设置界面显示 输入框调整宽度的拖拽手柄). Hide them
+      // with the pane for the same reason.
+      '[class*="pI_x6G_frame"]:has([class*="VOzbGW_overlay"]) [class*="widthHandle"] { display: none !important; }',
+      // Code-block TOP BANNERS (_banner_/_bannerWrap_rsn9u: the sticky strip
+      // with the language tag and the copy button, position:sticky +
+      // z-index:6). The block itself has no stacking context and body carries
+      // the global saturate filter, so the banner's z:6 competes in the ROOT
+      // context where it outranks the sidebar column's z:1 — the settings
+      // overlay (hosted inside that column) could cover the block body but NOT
+      // its banner, which stayed drawn across the settings page
+      // (用户: 打开恢复 sudo 密码验证会话再点设置 bash 窗口显示在设置界面).
+      // Resetting the banner's z under the overlay hides it with the rest.
+      '[class*="pI_x6G_frame"]:has([class*="VOzbGW_overlay"]) [class*="_banner_"] { z-index: auto !important; }',
+      // The block BODY is a composited layer (md-code-block, hardware GL over a
+      // transparent window): the compositor paints it ABOVE the settings modal
+      // REGARDLESS of z-order — z resets, dropping its backdrop-filter, even
+      // the mask frosted-blur all verified ineffective, only unrendering it
+      // removes the bleed (display:none and visibility:hidden both verified).
+      // The page behind the modal is dimmed+blurred anyway, so hiding the
+      // block while settings are open costs nothing visually.
+      '[class*="pI_x6G_frame"]:has([class*="VOzbGW_overlay"]) [class*="md-code-block"] { visibility: hidden !important; }',
+      // Match the frame's third grid track to the REAL pane width. The frame
+      // (pI_x6G_frame) is display:grid with an INLINE
+      // grid-template-columns: <left> minmax(0, 1fr) <give> — the official
+      // give stays pinned at 771px while paneWidthScript halves the pane to
+      // ~386px (用户: 默认右上角的侧边栏按钮 弹出的侧边栏界面很宽 需要缩小
+      // 50%) — the leftover ~385px inside rightbarCol read as a dead blank
+      // strip between the center column and the pane (用户: 另一个50%的界面是
+      // 空白的 我是希望不要这个空白的区域). A flex-basis on rightbarCol did
+      // nothing (grid item, not flex item), so override grid-template-columns
+      // itself: --dsh-pane-give (paneWidthScript: pane width, exactly — the
+      // official track equals the pane and the panel fills its column; an
+      // earlier +8px lead-in opened a visible gap, 用户: 右边侧边栏跟中间输入
+      // 框 间隔很大) drives the third track, --dsh-left-give mirrors the
+      // frame's own first track (280px ⇄ 56px on left-rail collapse) so the
+      // override never hardcodes the left column, and minmax(0, 1fr) lets the
+      // center column absorb the reclaimed space instead of leaving it blank.
+      // :has() gated on the panel's aria-hidden: a closed pane
+      // (aria-hidden=true) releases back to the official inline grid (0px
+      // rail). Exact [class=...] match so the panel's children
+      // (panelBody/iconButton, which never carry aria-hidden) cannot keep the
+      // rule alive while the pane is closed. Redundant-but-harmless once
+      // paneWidthScript halves via actions.setRightbar (the official inline
+      // grid then already says 386px) — kept as the fallback path's fix.
+      '[class*="pI_x6G_frame"]:has([class="P3OORG_panel"]:not([aria-hidden="true"])) { grid-template-columns: var(--dsh-left-give, 280px) minmax(0, 1fr) var(--dsh-pane-give, 386px) !important; }',
+      // The hosted settings panel (VOzbGW_overlay → mask/panel, fixed) must
+      // stack ABOVE the official right sidebar: the pane mounts later in the
+      // layout with a higher z-index, so with the pane open the settings page's
+      // right side was covered by it (用户: 设置界面没有置顶 右侧区域会被侧边
+      // 栏占用). Lift the overlay above all page UI, just under the cursor-FX
+      // canvas (2147482999).
+      '[class*="VOzbGW_overlay"] { z-index: 2147482000 !important; }',
       // The center column's blur rides a ::before pseudo-element (same
       // pattern as the sidebar), NOT the column itself: a backdrop-filter on
       // the element forces the compositor to re-sample everything below it
@@ -958,12 +1126,18 @@ export function ambientStyleScript(): string {
       // saturates the texture, and 150% is the chosen depth.)
       // (The ::before blur itself is the merged selector in the centerCol
       // rule above — same declaration, one place to edit.)
-      // Hosted settings panel (VOzbGW_panel, tagged data-dsh-settings-panel by
-      // themeSettingsScript): DSH paints it with an OPAQUE blue-gray
-      // (rgb(32,38,52)). Give the SETTINGS surface its own frosted glass,
-      // driven by the 设置界面毛玻璃 slider, so it reads as glass like the
-      // main UI instead of a solid slab.
-      '[data-dsh-settings-panel] { background-color: var(--dsh-glass-settings-bg, rgba(15,17,23,0.35)) !important; backdrop-filter: var(--dsh-glass-main-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-main-filter) !important; }',
+      // Hosted settings panel (VOzbGW_panel — unique "panel" class in the
+      // VOzbGW module, verified via CDP): DSH paints it with an OPAQUE
+      // blue-gray (rgb(32,38,52)). Give the SETTINGS surface its own frosted
+      // glass, driven by the 设置界面毛玻璃 slider, so it reads as glass like
+      // the main UI instead of a solid slab.
+      // Selector is the class itself, NOT [data-dsh-settings-panel]: the tag
+      // is set by themeSettingsScript's rAF-throttled heal tick, so the first
+      // 2-3 frames after opening still matched DSH's opaque fill — the panel
+      // visibly "先暗一下" before turning glass. A class selector hits from
+      // the very first painted frame. (themeSettingsScript keeps tagging the
+      // attribute; it's just no longer load-bearing for this rule.)
+      '[class*="VOzbGW_panel"] { background-color: var(--dsh-glass-settings-bg, rgba(15,17,23,0.55)) !important; backdrop-filter: var(--dsh-glass-main-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-main-filter) !important; }',
       // "确认启用 Full access？" 确认弹窗 (_confirmation_<hash>_<n>，由 通用设置
       // → 权限 选择 Full access 触发): DSH 用 OPAQUE rgb(32,38,52) 画卡片且无
       // blur——一块实心灰板。改用弹出层毛玻璃(同下拉菜单/悬浮卡家族)，让确认

@@ -172,10 +172,10 @@ export function sessionManageScript(): string {
     // ---------- 官方网关 / 桌面桥 ----------
     const rpcArchive = function (sessionId) {
       const rpcId = 'dsh-sm-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
-      return fetch('/api/workspace.archiveSession', {
+      return fetch('/api/workspace/archiveSession', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ type: 'client-request', rpcId: rpcId, method: 'workspace.archiveSession', payload: { sessionId: sessionId } }),
+        body: JSON.stringify({ type: 'client-request', rpcId: rpcId, method: 'workspace/archiveSession', payload: { args: { request: { sessionId: sessionId } } } }),
       }).then(function (response) {
         return response.json().catch(function () { return null })
       }).then(function (parsed) {
@@ -963,6 +963,14 @@ export function sessionManageScript(): string {
 
     // ---------- MutationObserver：菜单 + 面板按钮 ----------
     let observer = null
+    // 侧栏折叠/展开仅切换 class/style，动画期间每帧都会变；rAF 去抖把同帧
+    // 的多次同步合并为一次。
+    let syncPending = false
+    const scheduleSyncArchiveRail = function () {
+      if (syncPending) return
+      syncPending = true
+      requestAnimationFrame(function () { syncPending = false; syncArchiveRail() })
+    }
     const runPass = function (root) {
       try {
         const menus = root !== undefined && root !== null && typeof root.querySelectorAll === 'function'
@@ -974,14 +982,16 @@ export function sessionManageScript(): string {
     }
     observer = new MutationObserver(function (records) {
       if (!Array.isArray(records)) { runPass(document.body); return }
+      let sawAdded = false
       for (const record of records) {
         if (record.type === 'attributes') {
           // 侧栏折叠/展开仅切换 class 属性，需同步已归档按钮的收起态。
-          if (record.attributeName === 'class' || record.attributeName === 'style') syncArchiveRail()
+          if (record.attributeName === 'class' || record.attributeName === 'style') scheduleSyncArchiveRail()
           continue
         }
         const added = record.addedNodes
         if (added === null || added === undefined || added.length === 0) continue
+        sawAdded = true
         for (let i = 0; i < added.length; i += 1) {
           const raw = added[i]
           if (raw === null || raw === undefined || raw.nodeType !== 1) continue
@@ -992,8 +1002,10 @@ export function sessionManageScript(): string {
           }
           if (typeof node.querySelectorAll === 'function') runPass(node)
         }
-        ensurePanelButton()
       }
+      // 每批 mutations 最多一次（原来每条含新增节点的 record 都调一次，
+      // 流式响应期间一批可达数十条；函数内部虽有短路，调用本身也不免费）。
+      if (sawAdded) ensurePanelButton()
     })
     observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] })
     runPass(document.body)

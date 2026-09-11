@@ -15,7 +15,7 @@ import { app, BrowserWindow, dialog, Menu, nativeImage, nativeTheme, session, sh
 // not break the shell. The embedded terminal feature degrades gracefully.
 const require_ = createRequire(import.meta.url)
 import { alphaControlScript, ambientStyleScript, glassGuardScript, glassWindowOptions, loadGlassSettings, saveGlassSettings, streamingGuardScript, themeScript, type GlassTheme } from './glass.ts'
-import { featureControlScript, glassControlsScript, inputHistoryScript, themeSettingsScript, whaleSprayScript } from './misc-scripts.ts'
+import { featureControlScript, glassControlsScript, inputHistoryScript, paneWidthScript, themeSettingsScript, whaleSprayScript } from './misc-scripts.ts'
 import { terminalScript } from './terminal-scripts.ts'
 import { wallpaperControlScript, wallpaperLayerScript } from './wallpaper-scripts.ts'
 import { detectExistingServer, readDshVersion, resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
@@ -452,6 +452,7 @@ function createWindow(url: URL): void {
         whaleSprayScript,
         streamingGuardScript,
         sessionManageScript,
+        paneWidthScript,
       ])
       void injectPlugins(window)
       void injectTerminal(window)

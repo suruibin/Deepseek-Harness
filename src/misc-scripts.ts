@@ -4,8 +4,10 @@
  * panel, and the theme-settings nav integration.
  *
  * Each export returns a JS string executed in the hosted page via inject()
- * in main.ts. Self-contained: no imports, no shared module state.
+ * in main.ts. Self-contained: no imports, no shared module state. The shared
+ * mut-bus snippet is prepended so body-wide observers collapse into one.
  */
+import { mutBusSnippet } from './mut-bus.ts'
 /**
  * Whale-spray cursor effect: while the pointer moves across the center
  * column's non-message areas (header, input bar, margins — anything outside
@@ -16,6 +18,201 @@
  * current whale brand color. Droplets arc under gravity and fade out; the
  * animation loop only runs while the whale is visible.
  */
+/**
+ * Right-sidebar default width halver. The official pane shell
+ * (P3OORG_panel, position:absolute) ships with an inline width of ~45% of
+ * the window (771px at 1714) written by React as an inline style, and there
+ * is no settings key or localStorage entry to change it (用户: 右上角的
+ * 侧边栏按钮弹出的侧边栏界面很宽 需要缩小50%). A CSS !important width
+ * would also pin the width and kill the official drag-to-resize handles, so
+ * this script halves the INLINE width instead and keeps the official drag
+ * logic in charge afterwards.
+ *
+ * Width model: the pane width is an official store preference
+ * (layoutInfo.rightbar, first-open default 45% of the viewport). When the
+ * AppFrame actions are reachable through the React fiber (normal case), the
+ * halving happens at the STATE level — actions.setRightbar(defW/2) on the
+ * first observation of the official default — so React renders
+ * state === DOM and its drag math (setRightbar(base − dx), base from the
+ * state) is exact from the very first drag. The DOM-halve fallback (defW/
+ * userW/±8 heuristics) only runs when the fiber walk fails.
+ *
+ * The same tick publishes two CSS vars the glass stylesheet consumes to
+ * rebuild the frame's grid-template-columns (the frame is display:grid, so a
+ * flex-basis on rightbarCol does nothing): `--dsh-pane-give` (pane width,
+ * exactly — the official third track equals the pane and the panel fills its
+ * column) for the third track — the official give stays pinned at the
+ * 771px default, so a halved pane used to leave a ~385px dead strip between
+ * the center column and the pane (用户: 另一个50%的界面是空白的 我是希望
+ * 不要这个空白的区域) — and `--dsh-left-give` mirroring the frame's own
+ * first track (280px ⇄ 56px on left-rail collapse) so the override never
+ * hardcodes the left column. Keyed to the pane's own width, the give always
+ * matches, even after the user drags.
+ */
+export function paneWidthScript(): string {
+  return `(() => {
+  try {
+    if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return
+    if (typeof window.__dshMutBus === 'undefined') return
+    if (window.__dshPaneWidth) { try { window.__dshPaneWidth.off() } catch (e) {} window.__dshPaneWidth = undefined }
+    var defW = 0
+    var userW = 0
+    var dragSeen = false
+    // The frame renders TWO col-resize strips: the left rail's resizer FIRST
+    // in DOM, the right pane's LAST (verified by dragging each via CDP — the
+    // first one's drag resizes sidebarCol, the last one's the pane). Earlier
+    // code grabbed "the first handle" and parked the RAIL's resizer at the
+    // pane edge, so dragging the pane edge resized the left sidebar (用户:
+    // 拉的话 会导致左侧侧边栏图标移动) and the pane itself stopped being
+    // resizable (用户: 右上角的侧边栏现在不能调整宽度了). Only treat the
+    // LAST handle as the pane's, and only when both exist: a lone handle in
+    // the closed state is the rail's own resizer and must never be touched.
+    var paneHandle = function () {
+      var hs = document.querySelectorAll('[class*="pI_x6G_handle"]')
+      return hs.length >= 2 ? hs[hs.length - 1] : null
+    }
+    document.addEventListener('pointerdown', function (e) {
+      var t = e.target
+      if (!t || typeof t.closest !== 'function') return
+      var h = t.closest('[class*="pI_x6G_handle"]')
+      if (h && h === paneHandle()) dragSeen = true
+    }, true)
+    var applyW = function (w) {
+      var p = document.querySelector('[class="P3OORG_panel"]')
+      if (p == null) return
+      var next = Math.round(w) + 'px'
+      if (p.style.width !== next) p.style.width = next
+    }
+    // React owns the pane width as a store preference (layoutInfo.rightbar,
+    // initialized to 45% of the viewport on first open, clamp 300..0.7*vw) and
+    // its drag math is setRightbar(rightbarBase − dx) with base read from THAT
+    // state. Halving only the DOM left the state at 771, so the first drag
+    // landed at state±dx — a ~2× visual jump (用户: 第一次调整宽度时 跨度很
+    // 大). Walking the fiber from the frame element one level up reaches the
+    // AppFrame component fiber whose props.actions exposes setRightbar: calling
+    // it halves the STATE, React re-renders state === DOM, and every later
+    // drag is exact. The DOM-halve path below is only the fallback for a
+    // React version where the fiber walk fails.
+    var reactActions = null
+    var findActions = function () {
+      if (reactActions) return reactActions
+      var el = document.querySelector('[class*="pI_x6G_frame"]')
+      if (!el) return null
+      var k = Object.keys(el).find(function (key) { return key.indexOf('__reactFiber$') === 0 })
+      if (!k) return null
+      var f = el[k]
+      for (var i = 0; i < 6 && f; i += 1) {
+        var pr = f.memoizedProps
+        if (pr && pr.actions && typeof pr.actions.setRightbar === 'function') { reactActions = pr.actions; return reactActions }
+        f = f.return
+      }
+      return null
+    }
+    // The mut-bus deliberately does not watch attribute mutations, but React
+    // reports pane drags by rewriting the panel's inline width and the
+    // frame's inline grid-template-columns — pure attribute churn with no
+    // childList noise, so without this narrow observer --dsh-pane-give and
+    // --dsh-left-give lag a drag behind and the glass grid override leaves a
+    // dead strip next to the pane again. Attribute-scoped observers are the
+    // established cheap pattern here (same as the body class/style watchers
+    // in glass); rAF-debounced exactly like the bus.
+    var attrObs = null
+    var attrPending = false
+    var attachAttrObs = function () {
+      if (attrObs !== null || typeof MutationObserver === 'undefined') return
+      var p = document.querySelector('[class="P3OORG_panel"]')
+      var f = document.querySelector('[class*="pI_x6G_frame"]')
+      if (p == null || f == null) return
+      try {
+        attrObs = new MutationObserver(function () {
+          if (attrPending) return
+          attrPending = true
+          requestAnimationFrame(function () { attrPending = false; tick() })
+        })
+        attrObs.observe(p, { attributes: true, attributeFilter: ['style'] })
+        attrObs.observe(f, { attributes: true, attributeFilter: ['style'] })
+      } catch (e) { attrObs = null }
+    }
+    var sync = function () {
+      var leftGive = ''
+      var frame = document.querySelector('[class*="pI_x6G_frame"]')
+      if (frame) {
+        var m = /grid-template-columns:\\s*([^;]+)/.exec(frame.getAttribute('style') || '')
+        if (m) {
+          var tracks = m[1].trim().split(/\\s+/)
+          if (tracks.length > 0) leftGive = tracks[0]
+        }
+      }
+      var w = 0
+      var p = document.querySelector('[class="P3OORG_panel"]')
+      if (p != null) {
+        var raw = p.style.width || ''
+        if (/px$/.test(raw)) { var n = parseFloat(raw); if (n > 0) w = n }
+      }
+      // The pane's resizer strip is positioned by React from ITS width state
+      // (left = viewport − normal.rightbar). With the state halved via
+      // actions.setRightbar React puts the strip at the real pane edge itself,
+      // so this pin is a same-value no-op there; it only does work in the
+      // DOM-halve fallback where the state still says 771. Pin the PANE's
+      // strip (last of two) — closed, the pane's handle unmounts with the
+      // panel and the single remaining strip is the rail's own resizer: leave
+      // it where React put it (parking it used to strand the rail's resizer
+      // off-window).
+      if (w > 0 && p != null && p.getAttribute('aria-hidden') !== 'true') {
+        var h = paneHandle()
+        if (h) h.style.left = Math.round(window.innerWidth - w) + 'px'
+      } else if (p != null && p.getAttribute('aria-hidden') === 'true') {
+        var h2 = paneHandle()
+        if (h2) h2.style.left = window.innerWidth + 'px'
+      }
+      var root = document.documentElement
+      try {
+        root.style.setProperty('--dsh-left-give', leftGive || '280px')
+        // The official third track equals the pane width exactly (the panel
+        // fills its column, right-anchored) — an extra +8px lead-in here used
+        // to open a visible gap between the center column and the pane
+        // (用户: 右边侧边栏跟中间输入框 间隔很大).
+        root.style.setProperty('--dsh-pane-give', Math.round(w) + 'px')
+      } catch (e) {}
+    }
+    var tick = function () {
+      attachAttrObs()
+      var p = document.querySelector('[class="P3OORG_panel"]')
+      if (p != null) {
+        // Only a real px width counts: before the first open React mounts the
+        // pane with width:100%, and parseFloat("100%") would poison defW.
+        var raw = p.style.width || ''
+        var w = /px$/.test(raw) ? parseFloat(raw) : 0
+        if (w > 0) {
+          var acts = findActions()
+          if (acts) {
+            // State-level halving: React is the single source of truth. Only
+            // the very first observation (the official 45% default) is
+            // rewritten; user drags land in the state directly and are exact,
+            // reopen reuses the stored preference, and no DOM/state split
+            // remains for anything to fight over.
+            if (defW === 0) defW = w
+            if (Math.abs(w - defW) <= 8) acts.setRightbar(Math.round(defW / 2))
+          } else if (dragSeen) {
+            dragSeen = false
+            userW = w
+            applyW(w)
+          } else if (defW === 0) {
+            defW = w
+            applyW(w / 2)
+          } else if (Math.abs(w - defW) <= 8) {
+            applyW(userW > 0 ? userW : defW / 2)
+          }
+        }
+      }
+      sync()
+    }
+    var off = window.__dshMutBus.subscribe(tick)
+    window.__dshPaneWidth = { off: off }
+  } catch (e) {}
+})()`
+}
+
 /**
  * Cursor particle effect: over the center column's non-message areas the
  * pointer spouts a small fountain of water droplets (colored by the current
@@ -92,6 +289,17 @@ export function whaleSprayScript(): string {
       if (filesPanel !== null && filesPanel.style.display !== 'none') {
         const fr = filesPanel.getBoundingClientRect()
         if (x >= fr.left && x <= fr.right && y >= fr.top && y <= fr.bottom) return 'center'
+      }
+      // DSH 0.1.5-rc.1 official right sidebar (the pane toggled by the
+      // data-sidebar-right-expand/toggle buttons, section._pane_<hash>):
+      // it floats over the page OUTSIDE the _sidebarCol/_centerCol layout,
+      // so a cursor over it matched no zone and the effect went dead there
+      // (user: 弹出的侧边栏没有粒子效果). Treat it as sidebar (stars).
+      // Verified unique "_pane_" match in the page at fix time.
+      const rightPane = document.querySelector('section[class*="_pane_"]')
+      if (rightPane !== null) {
+        const pr = rightPane.getBoundingClientRect()
+        if (x >= pr.left && x <= pr.right && y >= pr.top && y <= pr.bottom) return 'sidebar'
       }
       // 'sidebar' or 'center' when the point is a trigger area, else null.
       const sidebar = document.querySelector('[class*="_sidebarCol"]')
@@ -368,7 +576,8 @@ export function whaleSprayScript(): string {
  * native value setter plus an input event so the SPA's state stays in sync.
  */
 export function inputHistoryScript(): string {
-  return `(() => {
+  return mutBusSnippet() + `
+    ;(() => {
     const KEY = 'dsh-desktop-input-history'
     const MAX = 50
     let history = []
@@ -489,12 +698,12 @@ export function inputHistoryScript(): string {
       pending = true
       requestAnimationFrame(() => { pending = false; attach() })
     }
-    const obs = new MutationObserver(schedule)
-    obs.observe(document.body, { childList: true, subtree: true })
+    // Shared mut-bus subscription replaces the former private body-wide observer.
+    const offMut = window.__dshMutBus.subscribe(schedule)
     attach()
     window.__dshInputHistory = {
       dispose: () => {
-        obs.disconnect()
+        offMut()
         const input = findInput()
         if (input != null) input.removeEventListener('keydown', onKey)
       },
@@ -513,10 +722,11 @@ export function inputHistoryScript(): string {
  *   - dsh-brand-cycle-change     { intervalMs }→ ambientStyleScript
  */
 export function featureControlScript(): string {
-  return `(() => {
-    if (window.__dshFeatureControlObserver) {
-      window.__dshFeatureControlObserver.disconnect()
-      window.__dshFeatureControlObserver = undefined
+  return mutBusSnippet() + `
+    ;(() => {
+    if (typeof window.__dshFeatureControlOff === 'function') {
+      try { window.__dshFeatureControlOff() } catch (e) {}
+      window.__dshFeatureControlOff = undefined
     }
     const KEYS = {
       files: 'files',
@@ -679,11 +889,11 @@ export function featureControlScript(): string {
       pending = true
       requestAnimationFrame(() => { pending = false; mount() })
     }
-    const obs = new MutationObserver(schedule)
-    window.__dshFeatureControlObserver = obs
-    // childList: row (re)mounts; characterData: locale switches swap text in
-    // place, which must re-sync the mounted controls' labels.
-    obs.observe(document.body, { childList: true, subtree: true, characterData: true })
+    // Shared mut-bus subscription: childList (row re-mounts) and characterData
+    // (locale switches swap text in place, re-syncing the mounted controls'
+    // labels) both flow through the bus's rAF-debounced flush.
+    const offMut = window.__dshMutBus.subscribe(schedule)
+    window.__dshFeatureControlOff = offMut
   })()`
 }
 
@@ -701,10 +911,11 @@ export function featureControlScript(): string {
  * immediately via the `#dsh-glass-custom` style node.
  */
 export function glassControlsScript(): string {
-  return `(() => {
-    if (window.__dshGlassControlObserver) {
-      window.__dshGlassControlObserver.disconnect()
-      window.__dshGlassControlObserver = undefined
+  return mutBusSnippet() + `
+    ;(() => {
+    if (typeof window.__dshGlassControlOff === 'function') {
+      try { window.__dshGlassControlOff() } catch (e) {}
+      window.__dshGlassControlOff = undefined
     }
     const read = (key, fallback) => {
       try {
@@ -727,14 +938,21 @@ export function glassControlsScript(): string {
       { key: 'mainblur', min: 0, max: 100, def: 20, unit: 'px' },
       { key: 'popupblur', min: 0, max: 100, def: 20, unit: 'px' },
       { key: 'main', min: 0, max: 100, def: 0, unit: '%' },
-      { key: 'settings', min: 0, max: 100, def: 5, unit: '%' },
+      // Settings-modal surface: 55% (was 5). At 5% the modal's dark base is
+      // nearly invisible, so a black bash/tool block in the conversation bled
+      // through as a sharp dark shadow and read like it sat ON TOP of the
+      // settings page (用户: 打开恢复 sudo 密码验证会话再点设置 bash 窗口显示
+      // 在设置界面). 55% + the modal's blur keeps the frosted look while
+      // actually occluding dark content behind it.
+      { key: 'settings', min: 0, max: 100, def: 55, unit: '%' },
       { key: 'input', min: 0, max: 100, def: 30, unit: '%' },
       { key: 'sidebar', min: 0, max: 100, def: 5, unit: '%' },
       { key: 'popup', min: 5, max: 100, def: 7, unit: '%' },
       // Global saturation of the whole window (body filter: saturate). 100% =
-      // no change; applied only when != 100 so the default leaves no
-      // containing-block side effect on fixed-position elements.
-      { key: 'saturate', min: 100, max: 150, def: 100, unit: '%' },
+      // no change; applied only when != 100. Default is 130 (用户: 主题设置里
+      // 整体饱和度默认设置130), so the filter IS active by default and the
+      // html/body height+overflow pinning below always applies.
+      { key: 'saturate', min: 100, max: 150, def: 130, unit: '%' },
     ]
     const values = Object.fromEntries(SLIDERS.map((s) =>
       [s.key, Math.max(s.min, Math.min(s.max, read('dsh-desktop-glass-' + s.key, s.def)))]))
@@ -757,8 +975,9 @@ export function glassControlsScript(): string {
       // the header card and shifted it off the wallpaper (user: 跟顶部的一样).
       const sidebarBg = a(values.sidebar)
       // Global saturation: applied to body only when != 100 (saturate(100%)
-      // still creates a containing block for fixed children, so the default
-      // must leave body filter-free to avoid shifting fixed overlays/docks).
+      // still creates a containing block for fixed children). The default is
+      // now 130 (用户: 默认设置130), so the filter and the html/body pinning
+      // below are ACTIVE by default.
       // A body filter makes fixed children position against body instead of
       // the viewport; pinning html/body to the viewport and hiding their
       // scrollbars keeps those fixed overlays in place and suppresses the
@@ -797,7 +1016,7 @@ export function glassControlsScript(): string {
         input: zh ? '输入框' : 'Input surface',
         sidebar: zh ? '侧边栏' : 'Sidebar',
         mainblur: zh ? '界面模糊' : 'Surface blur',
-        popup: zh ? '弹出层' : 'Popup menus',
+        popup: zh ? '弹窗' : 'Popup menus',
         popupblur: zh ? '弹窗模糊' : 'Popup blur',
         saturate: zh ? '整体饱和度' : 'Saturation',
       }
@@ -918,9 +1137,9 @@ export function glassControlsScript(): string {
       pending = true
       requestAnimationFrame(() => { pending = false; mount(); reorderWallpaper() })
     }
-    const obs = new MutationObserver(schedule)
-    window.__dshGlassControlObserver = obs
-    obs.observe(document.body, { childList: true, subtree: true, characterData: true })
+    // Shared mut-bus subscription replaces the former private body-wide observer.
+    const offMut = window.__dshMutBus.subscribe(schedule)
+    window.__dshGlassControlOff = offMut
   })()`
 }
 
@@ -948,7 +1167,8 @@ export function glassControlsScript(): string {
  *   shell version; empty hides the label.
  */
 export function themeSettingsScript(version = '', dshVersion = ''): string {
-  return `(() => {
+  return mutBusSnippet() + `
+    ;(() => {
     if (window.__dshThemeSettings) {
       try { window.__dshThemeSettings.cleanup() } catch {}
     }
@@ -1179,6 +1399,10 @@ export function themeSettingsScript(version = '', dshVersion = ''): string {
       if (settingsPanel !== null && settingsPanel.getAttribute('data-dsh-settings-panel') !== 'true') {
         settingsPanel.setAttribute('data-dsh-settings-panel', 'true')
       }
+      // (Settings-open pane hiding moved to a pure CSS :has() rule in
+      // glass.ts — the JS <html> flag variant stuck at "1" when the window
+      // went background before the rAF-driven heal tick ran, hiding the pane
+      // for good.)
       ensureCell()
       if (!state.open) return
       if (document.querySelector('[data-dsh-theme-panel]') === null) {
@@ -1196,11 +1420,11 @@ export function themeSettingsScript(version = '', dshVersion = ''): string {
       pending = true
       requestAnimationFrame(() => { pending = false; healTick() })
     }
-    const obs = new MutationObserver(schedule)
-    obs.observe(document.body, { childList: true, subtree: true })
+    // Shared mut-bus subscription replaces the former private body-wide observer.
+    const offMut = window.__dshMutBus.subscribe(schedule)
     ensureCell()
     window.__dshThemeSettings = {
-      cleanup: () => { obs.disconnect(); if (healTimer !== null) clearTimeout(healTimer); closePanel() },
+      cleanup: () => { offMut(); if (healTimer !== null) clearTimeout(healTimer); closePanel() },
     }
   })()`
 }
