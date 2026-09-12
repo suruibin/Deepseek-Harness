@@ -905,7 +905,26 @@ export function sessionManageScript(): string {
           btn.innerHTML = ARCHIVE_ICON_SVG + '<span>查看已归档</span>'
           btn.style.cssText = 'display:flex;align-items:center;gap:6px;margin:6px 10px;padding:6px 10px;border:none;border-radius:8px;cursor:pointer;font:inherit;font-size:12px;color:var(--dsw-alias-label-secondary,#888);background:transparent'
         }
-        foot.appendChild(btn)
+        // 折叠态插到搜索图标正下方（折叠 rail 的 bhn1Oq_search 之后、
+        // 列表区之前，用户要求归档图标「在上面 搜索图标下面」）；找不到
+        // 搜索容器时退回设置图标上方。展开态兜底仍追加。
+        if (collapsed) {
+          const searchBox = document.querySelector('[class*="bhn1Oq_search"]')
+          if (searchBox !== null && searchBox.parentNode !== null) {
+            if (searchBox.nextSibling !== null) searchBox.parentNode.insertBefore(btn, searchBox.nextSibling)
+            else searchBox.parentNode.appendChild(btn)
+          } else {
+            let settingsArea = null
+            for (let i = 0; i < foot.children.length; i += 1) {
+              const c = foot.children[i]
+              if ((c.className || '').toString().indexOf('settingsArea') !== -1) { settingsArea = c; break }
+            }
+            if (settingsArea !== null) foot.insertBefore(btn, settingsArea)
+            else foot.appendChild(btn)
+          }
+        } else {
+          foot.appendChild(btn)
+        }
       }
     }
     const ensurePanelButton = function () {
@@ -935,8 +954,16 @@ export function sessionManageScript(): string {
         const existing = document.getElementById('dsh-sm-archive-btn')
         if (existing !== null) {
           const okHeader = header !== null && existing.parentElement !== null && (existing.parentElement === header || existing.parentElement.parentNode === header)
+          // 折叠态目标容器：搜索图标所在容器（bhn1Oq_search 的父级 rail）；
+          // 展开态兜底容器：footArea。
+          let collapsedRail = null
+          if (collapsed) {
+            const sb = document.querySelector('[class*="bhn1Oq_search"]')
+            if (sb !== null) collapsedRail = sb.parentElement
+          }
+          const okRail = collapsed && collapsedRail !== null && existing.parentElement === collapsedRail
           const okFoot = header === null && foot !== null && existing.parentElement === foot
-          if (!okHeader && !okFoot) repositionArchiveBtn(existing, header, foot, collapsed)
+          if (!okHeader && !okRail && !okFoot) repositionArchiveBtn(existing, header, foot, collapsed)
           syncArchiveRail()
           return
         }
