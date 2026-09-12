@@ -18,7 +18,7 @@ import { alphaControlScript, ambientStyleScript, glassGuardScript, glassWindowOp
 import { featureControlScript, glassControlsScript, inputHistoryScript, paneWidthScript, themeSettingsScript, whaleSprayScript } from './misc-scripts.ts'
 import { terminalScript } from './terminal-scripts.ts'
 import { wallpaperControlScript, wallpaperLayerScript } from './wallpaper-scripts.ts'
-import { detectExistingServer, readDshVersion, resolveWebLaunch, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
+import { detectExistingServer, readDshVersion, resolveExternalLaunchToken, resolveWebLaunch, validateInstanceToken, waitForHttpOk, waitForReadyLine, childExited } from './launcher.ts'
 import { restartWebServer, spawnReaper, STDERR_TAIL_LIMIT } from './server-restart.ts'
 import { mergePlugins, pluginsCssScript, readPluginDir } from './plugins.ts'
 import { PtyRegistry } from './pty-registry.ts'
@@ -629,17 +629,34 @@ async function boot(): Promise<void> {
     .catch((error: unknown) => {
       console.warn(`[dsh-desktop] 会话日志自动修复失败: ${error instanceof Error ? error.message : String(error)}`)
     })
-  // 检测是否已有 dsh web 实例在运行（如常驻 GUI）。两个 dsh web 共享
-  // ~/.dsh/sessions 却无跨进程写锁，并发写同一会话会产生 seq 重复/缺口并
-  // 损坏历史；复用已有实例从源头消除这类损坏。
+  // 检测是否已有 dsh web 实例在运行（如常驻 GUI / systemd 常驻服务）。两个
+  // dsh web 共享 ~/.dsh/sessions 却无跨进程写锁，并发写同一会话会产生 seq
+  // 重复/缺口并损坏历史；且在跑实例持有各会话的 session.lock 写句柄，第二
+  // 实例的会话写操作（如选择模型）全部以 SessionAlreadyOwnedError 静默失败
+  // ——复用已有实例从源头消除这两类损坏。
   try {
     const existing = await detectExistingServer({ env: process.env })
     if (existing !== undefined) {
-      console.log(`[dsh-desktop] 检测到已运行的 dsh web 实例 ${existing.href}，直接复用（不启动第二个实例，避免并发写入会话存储）`)
-      serverUrl = existing
+      // rc.1+ token 栅栏实例对无凭据探测回 401+签名（authRequired），裸导航
+      // 只会落在 401 提示页：解析外部 launch token（DSH_WEB_TOKEN →
+      // journalctl 扫 DSH_WEB_UNIT ready 行），校验通过后以 /?token=<t> 导航
+      // 播种持久认证 cookie。token 解析失败时仍复用（绝不为此起第二实例，
+      // 宁可让窗口显示 401 提示页）；此时可设 DSH_WEB_TOKEN 显式指定。
+      let navUrl = existing.url
+      if (existing.authRequired) {
+        const token = await resolveExternalLaunchToken({ env: process.env })
+        if (token !== undefined && await validateInstanceToken(existing.url, token)) {
+          navUrl = new URL(`?token=${encodeURIComponent(token)}`, existing.url)
+          console.log(`[dsh-desktop] token 栅栏实例，经 ${navUrl.href} 播种认证 cookie`)
+        } else {
+          console.warn('[dsh-desktop] token 栅栏实例但未能解析有效 launch token（可设 DSH_WEB_TOKEN 显式指定，或确认 dsh-web 单元 ready 行已写入 journal）；窗口将显示 401 提示页，不起第二实例以避免并发写坏会话存储')
+        }
+      }
+      console.log(`[dsh-desktop] 检测到已运行的 dsh web 实例 ${existing.url.href}，直接复用（不启动第二个实例，避免并发写入会话存储）`)
+      serverUrl = existing.url
       await staleCookiesCleared
       Menu.setApplicationMenu(null)
-      createWindow(existing)
+      createWindow(navUrl)
       createTray()
       if (pendingFocus) {
         pendingFocus = false

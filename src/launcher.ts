@@ -272,6 +272,27 @@ export function childExited(child: Pick<ChildProcess, 'exitCode' | 'signalCode'>
  */
 const DSH_ROOT_MARKER = '__DSH_BOOT__'
 
+/**
+ * The body signature `dsh web` answers with when a request arrives without
+ * valid auth. rc.1+ gates the GUI behind a launch token, so a token-gated
+ * instance answers every tokenless probe with 401 + this exact text — the
+ * signature (not the bare status) is what proves a 401 candidate really is a
+ * live `dsh web` instance and not some other local server demanding login.
+ */
+export const DSH_AUTH_SIGNATURE = 'dsh web authentication required'
+
+/** A detected live `dsh web` instance, with how the window must enter it. */
+export interface ExistingServer {
+  url: URL
+  /**
+   * true when the instance is token-gated (dsh rc.1+ auth fence): it answered
+   * 401 with the dsh auth signature, so the window must be navigated with a
+   * launch-token URL (`/?token=<t>`, mints the persistent auth cookie) or it
+   * lands on the 401 hint page.
+   */
+  authRequired: boolean
+}
+
 export interface ExistingServerOptions {
   env: NodeJS.ProcessEnv
   /** Injectable fetch for tests; defaults to the global fetch. */
@@ -289,16 +310,28 @@ export interface ExistingServerOptions {
  * own in-memory snapshot of the log; concurrent appends then duplicate or gap
  * seq values and corrupt the file ("corrupt session log: seq gap in committed
  * region", history load fails). Reusing one instance removes that whole class
- * of corruption at the source.
+ * of corruption at the source. Worse, the running instance's per-session
+ * write handles (`session.lock`) make every session write of a second
+ * instance fail ("SessionAlreadyOwnedError: session ... is already owned by an
+ * active write handle") — the GUI then silently drops those actions, e.g. the
+ * model picker accepts no clicks. Reuse is therefore mandatory whenever a
+ * live instance is detectable.
  *
  * Candidate order: `DSH_DESKTOP_GUI_URL` (an explicit UI address, e.g. the
  * user's always-on GUI instance) → `DSH_DESKTOP_GUI_PORT` (default `3080`,
  * `dsh web`'s default listen port). A candidate counts as an existing instance
- * only when it answers HTTP 200 AND its HTML carries the Harness boot marker.
+ * in two cases:
+ *   1. it answers HTTP 200 AND its HTML carries the Harness boot marker
+ *      (tokenless-compatible instance), or
+ *   2. it answers HTTP 401 with the dsh auth signature body (rc.1+ token
+ *      fence — a tokenless probe can never see the marker HTML, so the
+ *      signature body is the instance proof; without this branch every rc.1+
+ *      external instance was judged "not running" and a corrupting second
+ *      instance got spawned).
  * @param options - env and injectable fetch.
- * @returns the existing instance's URL, or undefined when none is reachable.
+ * @returns the existing instance, or undefined when none is reachable.
  */
-export async function detectExistingServer(options: ExistingServerOptions): Promise<URL | undefined> {
+export async function detectExistingServer(options: ExistingServerOptions): Promise<ExistingServer | undefined> {
   const fetchImpl = options.fetchImpl ?? fetch
   const timeoutMs = options.timeoutMs ?? 3_000
   const candidates: string[] = []
@@ -314,17 +347,83 @@ export async function detectExistingServer(options: ExistingServerOptions): Prom
     }
     try {
       const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) })
+      if (response.status === 401) {
+        const body = await response.text().catch(() => '')
+        if (body.includes(DSH_AUTH_SIGNATURE)) return { url, authRequired: true }
+        continue
+      }
       if (!response.ok) continue
       // Read the whole payload: the boot marker sits inside the bundled
       // client scripts far past the document head, so a small head window
       // (4KiB) never saw it and reuse silently never triggered.
       const body = (await response.text()).slice(0, 262_144)
-      if (body.includes(DSH_ROOT_MARKER)) return url
+      if (body.includes(DSH_ROOT_MARKER)) return { url, authRequired: false }
     } catch {
       // 不可达：候选端口上没有实例，继续下一个候选。
     }
   }
   return undefined
+}
+
+/** Inputs for resolveExternalLaunchToken; injectable command runner for tests. */
+export interface ExternalTokenOptions {
+  env: NodeJS.ProcessEnv
+  /** Injectable command runner; defaults to execFile(journalctl). */
+  runImpl?: (command: string, args: string[], timeoutMs: number) => Promise<string>
+  /** Per-invocation deadline; defaults to 5s. */
+  timeoutMs?: number
+}
+
+/**
+ * Resolve the launch token of an EXTERNALLY managed `dsh web` instance (the
+ * systemd user service, a tmux pane, ...). rc.1+ prints the token only once on
+ * the ready line and never writes it to disk, so for a process this shell did
+ * not spawn the journal is the only token source:
+ * `DSH_WEB_TOKEN` (explicit override) → `journalctl --user -u
+ * <DSH_WEB_UNIT ?? 'dsh-web'>` over the last 48h, last `?token=` wins (a unit
+ * restart leaves stale tokens behind; the most recent ready line belongs to
+ * the running process).
+ * @returns the token, or undefined when none is configured/found (never throws).
+ */
+export async function resolveExternalLaunchToken(options: ExternalTokenOptions): Promise<string | undefined> {
+  const explicit = options.env.DSH_WEB_TOKEN
+  if (explicit !== undefined && explicit !== '') return explicit
+  const unit = options.env.DSH_WEB_UNIT !== undefined && options.env.DSH_WEB_UNIT !== '' ? options.env.DSH_WEB_UNIT : 'dsh-web'
+  const run = options.runImpl ?? ((command, args, timeoutMs) => new Promise((resolve, reject) => {
+    execFile(command, args, { timeout: timeoutMs, windowsHide: true }, (error, stdout) => {
+      if (error) reject(error)
+      else resolve(stdout)
+    })
+  }))
+  try {
+    const out = await run('journalctl', ['--user', '-u', unit, '--since', '-48h', '-o', 'cat', '--no-pager'], options.timeoutMs ?? 5_000)
+    const matches = [...out.matchAll(/\/\?token=([A-Za-z0-9._~-]+)/g)]
+    const last = matches[matches.length - 1]
+    return last?.[1]
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Probe whether `token` actually opens the token-gated instance at `url`: the
+ * token URL answers 303 (auth cookie minted, redirect to /) or 200 (a future
+ * no-redirect flow); anything else — 401 included — means the token does not
+ * belong to THIS instance (stale journal entry, wrong unit name).
+ */
+export async function validateInstanceToken(
+  url: URL,
+  token: string,
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = 3_000,
+): Promise<boolean> {
+  try {
+    const probe = new URL(`?token=${encodeURIComponent(token)}`, url)
+    const response = await fetchImpl(probe, { signal: AbortSignal.timeout(timeoutMs), redirect: 'manual' })
+    return response.status === 303 || response.ok
+  } catch {
+    return false
+  }
 }
 
 /**

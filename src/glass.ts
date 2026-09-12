@@ -720,6 +720,14 @@ export function ambientStyleScript(): string {
       // works, and the 30% tint over the already-frosted column reads the
       // same. Its backdrop-filter is intentionally omitted.
       '[class*=\"uV2eYG_card\"] { width: 780px !important; max-width: calc(100% - 16px) !important; margin-left: auto !important; margin-right: auto !important; background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; }',
+      // 0.1.5 new-session hero rows (工作区预览行 pXSMma_root + 选择工作区行
+      // wSkVaW_heroWorkspaceRow): the SPA stretches both across the full
+      // composer stack, matching its own full-width card — but our card is
+      // pinned to the centered 780px box above, so the left-aligned 选择工作区
+      // button floated ~80px LEFT of the card edge (用户: 添加工作区控件相对
+      // 输入框靠左边了). Pin both rows to the same 780px centered box as the
+      // card (border-box keeps the SPA's own inner padding inside it).
+      '[class*=\"pXSMma_root\"], [class*=\"wSkVaW_heroWorkspaceRow\"] { width: 780px !important; max-width: calc(100% - 16px) !important; margin-left: auto !important; margin-right: auto !important; box-sizing: border-box !important; }',
       // Queued-message dock (插话发送, _7yHdaG_dock): its width follows the
       // SPA's --dsh-composer-card-max-width default, which renders narrower
       // than the 780px input card the user sees (user: 太窄了). Pin it to the

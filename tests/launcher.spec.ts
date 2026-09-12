@@ -6,7 +6,9 @@ import {
   detectExistingServer,
   parseReadyLine,
   readDshVersion,
+  resolveExternalLaunchToken,
   resolveWebLaunch,
+  validateInstanceToken,
   waitForHttpOk,
   waitForReadyLine,
   WEB_ARGS,
@@ -253,20 +255,21 @@ describe('childExited', () => {
 describe('detectExistingServer', () => {
   it('returns undefined when no candidate is reachable', async () => {
     const fetchImpl = vi.fn(async () => { throw new Error('ECONNREFUSED') })
-    const url = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
-    expect(url).toBeUndefined()
+    const existing = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
+    expect(existing).toBeUndefined()
   })
 
   it('returns undefined when a candidate answers but lacks the Harness marker', async () => {
     const fetchImpl = vi.fn(async () => new Response('<html>other app</html>', { status: 200 }))
-    const url = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
-    expect(url).toBeUndefined()
+    const existing = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
+    expect(existing).toBeUndefined()
   })
 
   it('reuses the default GUI port when it serves a real instance', async () => {
     const fetchImpl = vi.fn(async () => new Response('<html><script>window.__DSH_BOOT__ = {}</script></html>', { status: 200 }))
-    const url = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
-    expect(url?.href).toBe('http://127.0.0.1:3080/')
+    const existing = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
+    expect(existing?.url.href).toBe('http://127.0.0.1:3080/')
+    expect(existing?.authRequired).toBe(false)
   })
 
   it('finds the marker even when it sits past the document head', async () => {
@@ -274,14 +277,14 @@ describe('detectExistingServer', () => {
     // into the payload; a 4KiB head window never saw it and reuse never fired.
     const filler = 'x'.repeat(20_000)
     const fetchImpl = vi.fn(async () => new Response(`<html><body>${filler}window.__DSH_BOOT__</body></html>`, { status: 200 }))
-    const url = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
-    expect(url?.href).toBe('http://127.0.0.1:3080/')
+    const existing = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
+    expect(existing?.url.href).toBe('http://127.0.0.1:3080/')
   })
 
   it('honors DSH_DESKTOP_GUI_PORT', async () => {
     const fetchImpl = vi.fn(async () => new Response('<html>window.__DSH_BOOT__</html>', { status: 200 }))
-    const url = await detectExistingServer({ env: { DSH_DESKTOP_GUI_PORT: '41501' }, fetchImpl, timeoutMs: 10 })
-    expect(url?.href).toBe('http://127.0.0.1:41501/')
+    const existing = await detectExistingServer({ env: { DSH_DESKTOP_GUI_PORT: '41501' }, fetchImpl, timeoutMs: 10 })
+    expect(existing?.url.href).toBe('http://127.0.0.1:41501/')
   })
 
   it('prefers an explicit DSH_DESKTOP_GUI_URL over the default port', async () => {
@@ -290,8 +293,8 @@ describe('detectExistingServer', () => {
       seen.push(String(input))
       return new Response('<html>window.__DSH_BOOT__</html>', { status: 200 })
     })
-    const url = await detectExistingServer({ env: { DSH_DESKTOP_GUI_URL: 'http://127.0.0.1:9999/' }, fetchImpl, timeoutMs: 10 })
-    expect(url?.href).toBe('http://127.0.0.1:9999/')
+    const existing = await detectExistingServer({ env: { DSH_DESKTOP_GUI_URL: 'http://127.0.0.1:9999/' }, fetchImpl, timeoutMs: 10 })
+    expect(existing?.url.href).toBe('http://127.0.0.1:9999/')
     // The explicit URL is probed first; the default port is never reached.
     expect(seen).toEqual(['http://127.0.0.1:9999/'])
   })
@@ -302,8 +305,90 @@ describe('detectExistingServer', () => {
       if (u === 'http://127.0.0.1:9999/') throw new Error('ECONNREFUSED')
       return new Response('<html>window.__DSH_BOOT__</html>', { status: 200 })
     })
-    const url = await detectExistingServer({ env: { DSH_DESKTOP_GUI_URL: 'http://127.0.0.1:9999/' }, fetchImpl, timeoutMs: 10 })
-    expect(url?.href).toBe('http://127.0.0.1:3080/')
+    const existing = await detectExistingServer({ env: { DSH_DESKTOP_GUI_URL: 'http://127.0.0.1:9999/' }, fetchImpl, timeoutMs: 10 })
+    expect(existing?.url.href).toBe('http://127.0.0.1:3080/')
+  })
+
+  it('reuses a token-gated instance answering 401 with the dsh auth signature', async () => {
+    // Regression: rc.1+ token fences answer every tokenless probe with 401, so
+    // the old 200+marker-only check judged the live instance "not running" and
+    // spawned a second instance — its session writes then all failed with
+    // SessionAlreadyOwnedError (user: 不能选择模型了).
+    const fetchImpl = vi.fn(async () => new Response('dsh web authentication required; reopen the URL printed by dsh web.\n', { status: 401 }))
+    const existing = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
+    expect(existing?.url.href).toBe('http://127.0.0.1:3080/')
+    expect(existing?.authRequired).toBe(true)
+  })
+
+  it('ignores a 401 from a non-dsh server (no auth signature body)', async () => {
+    const fetchImpl = vi.fn(async () => new Response('router admin login', { status: 401 }))
+    const existing = await detectExistingServer({ env: {}, fetchImpl, timeoutMs: 10 })
+    expect(existing).toBeUndefined()
+  })
+})
+
+describe('resolveExternalLaunchToken', () => {
+  it('prefers an explicit DSH_WEB_TOKEN over the journal scan', async () => {
+    const runImpl = vi.fn(async () => { throw new Error('journalctl not run') })
+    const token = await resolveExternalLaunchToken({ env: { DSH_WEB_TOKEN: 'tok-explicit' }, runImpl })
+    expect(token).toBe('tok-explicit')
+    expect(runImpl).not.toHaveBeenCalled()
+  })
+
+  it('scans the journal unit ready lines and takes the last token', async () => {
+    const runImpl = vi.fn(async (command: string, args: string[]) => {
+      expect(command).toBe('journalctl')
+      expect(args).toContain('--user')
+      expect(args).toContain('-u')
+      expect(args).toContain('dsh-web')
+      return [
+        'dsh web: http://127.0.0.1:3080/?token=G90prKgHeJOgzLMTgSGWcgQ_cu2omHZW1jIw0WWNLc8',
+        'some other log line',
+        'dsh web: http://127.0.0.1:3080/?token=tok-newer-2',
+      ].join('\n')
+    })
+    const token = await resolveExternalLaunchToken({ env: {}, runImpl })
+    expect(token).toBe('tok-newer-2')
+  })
+
+  it('honors DSH_WEB_UNIT for the journal scan', async () => {
+    const runImpl = vi.fn(async (_command: string, args: string[]) => {
+      expect(args).toContain('dsh-web-custom')
+      return 'dsh web: http://127.0.0.1:3080/?token=tok-unit'
+    })
+    const token = await resolveExternalLaunchToken({ env: { DSH_WEB_UNIT: 'dsh-web-custom' }, runImpl })
+    expect(token).toBe('tok-unit')
+  })
+
+  it('returns undefined when the journal scan fails or has no token', async () => {
+    const failing = await resolveExternalLaunchToken({ env: {}, runImpl: async () => { throw new Error('no journal') } })
+    expect(failing).toBeUndefined()
+    const empty = await resolveExternalLaunchToken({ env: {}, runImpl: async () => 'no tokens here' })
+    expect(empty).toBeUndefined()
+  })
+})
+
+describe('validateInstanceToken', () => {
+  const base = new URL('http://127.0.0.1:3080/')
+
+  it('accepts the 303 cookie-mint redirect', async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe('http://127.0.0.1:3080/?token=tok')
+      return new Response(null, { status: 303, headers: { location: '/' } })
+    })
+    expect(await validateInstanceToken(base, 'tok', fetchImpl)).toBe(true)
+  })
+
+  it('accepts a direct 200 (future no-redirect flow)', async () => {
+    const fetchImpl = vi.fn(async () => new Response('<html>window.__DSH_BOOT__</html>', { status: 200 }))
+    expect(await validateInstanceToken(base, 'tok', fetchImpl)).toBe(true)
+  })
+
+  it('rejects 401 (token belongs to another instance run) and transport errors', async () => {
+    const unauthorized = vi.fn(async () => new Response('dsh web authentication required', { status: 401 }))
+    expect(await validateInstanceToken(base, 'stale', unauthorized)).toBe(false)
+    const unreachable = vi.fn(async () => { throw new Error('ECONNREFUSED') })
+    expect(await validateInstanceToken(base, 'tok', unreachable)).toBe(false)
   })
 })
 
