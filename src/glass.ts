@@ -231,7 +231,8 @@ export function glassGuardScript(alpha: number): string {
     // deep color (--dsw-alias-markdown-code-block / -banner), so the command+
     // output frames read as solid black slabs. Repoint both to the same
     // translucent glass tint as the other surfaces so they join the frosted
-    // family (they still blur through the center column's backdrop).
+    // family (they still blur through the center column's backdrop). Dark
+    // theme additionally overrides these to the POPUP glass family below.
     '--dsw-alias-markdown-code-block': `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`,
     '--dsw-alias-markdown-code-block-banner': `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`,
   })
@@ -240,7 +241,21 @@ export function glassGuardScript(alpha: number): string {
       window.__dshGlassGuardObserver.disconnect()
       window.__dshGlassGuardObserver = undefined
     }
-    const darkProps = ${JSON.stringify({ ...make(15, 17, 23), ...SURFACE_DARK })}
+    // Dark theme: code blocks / banners ride the POPUP glass family
+    // (blue-gray 39,46,62) instead of the near-black base tint — the
+    // near-black at per-layer alpha read as a flat dark smudge on bright
+    // wallpapers (用户: 输出界面比较暗). Diluted to 60% via color-mix: even
+    // de-stacked, a full 0.38 slab over the body+frame veils still read dark
+    // at block scale (lum 65 vs 83 surroundings). color-mix keeps the 弹出层
+    // slider driving code-block depth (alpha scales proportionally); the
+    // guard's literal-string equality check stays stable because the value
+    // itself never changes.
+    const darkProps = ${JSON.stringify({
+      ...make(15, 17, 23),
+      ...SURFACE_DARK,
+      '--dsw-alias-markdown-code-block': 'color-mix(in srgb, var(--dsh-glass-popup-bg, rgba(39, 46, 62, 0.38)) 60%, transparent)',
+      '--dsw-alias-markdown-code-block-banner': 'color-mix(in srgb, var(--dsh-glass-popup-bg, rgba(39, 46, 62, 0.38)) 60%, transparent)',
+    })}
     const lightProps = ${JSON.stringify({ ...make(245, 246, 247), ...SURFACE_LIGHT })}
     const pick = () => document.body.hasAttribute('data-ds-dark-theme') ? darkProps : lightProps
     const apply = () => {
@@ -720,6 +735,25 @@ export function ambientStyleScript(): string {
       // works, and the 30% tint over the already-frosted column reads the
       // same. Its backdrop-filter is intentionally omitted.
       '[class*=\"uV2eYG_card\"] { width: 780px !important; max-width: calc(100% - 16px) !important; margin-left: auto !important; margin-right: auto !important; background-color: var(--dsh-glass-input-bg, rgb(39,46,62)) !important; }',
+      // 0.1.5 markdown code-block banner strip (_bannerWrap_rsn9u_24, the
+      // sticky 复制 header) + body — effects SWAPPED per user (复制这行的效果
+      // 跟下面输出的对调): the strip carries the single flat tint (one layer
+      // only — inner _banner and the block stay transparent, or the strip
+      // doubles up again), while the code body drops its tint and gets the
+      // frosted backdrop instead. Block is a neutral container so each
+      // surface composes from exactly ONE layer over the frosted column.
+      '[class*=\"_block_rsn9u_\"] { background: transparent !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12), 0 6px 20px rgba(15,17,23,0.16) !important; }',
+      '[class*=\"_bannerWrap_rsn9u_\"] { background: color-mix(in srgb, var(--dsh-glass-popup-bg, rgba(39, 46, 62, 0.38)) 60%, transparent) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }',
+      '[class*=\"_banner_rsn9u_\"] { background: transparent !important; flex-direction: row-reverse !important; }',
+      // blur ONLY, no saturate: the column ::before already applies
+      // saturate(150%), and a second saturate here compounded on top of it —
+      // plus the streaming toggle below flipped it on/off, so the body's
+      // saturation visibly jumped whenever a response started/ended (用户:
+      // 复制下面的饱和度会变化). Plain blur keeps the frost constant; no
+      // streaming guard either — the hover-card flicker never applied here,
+      // and a constant render beats a blinking one.
+      '[class*=\"_plain_rsn9u_\"] { background: transparent !important; backdrop-filter: blur(20px) !important; -webkit-backdrop-filter: blur(20px) !important; }',
+      '[class*=\"_block_rsn9u_\"] code { background: transparent !important; }',
       // 0.1.5 new-session hero rows (工作区预览行 pXSMma_root + 选择工作区行
       // wSkVaW_heroWorkspaceRow): the SPA stretches both across the full
       // composer stack, matching its own full-width card — but our card is
@@ -1004,6 +1038,21 @@ export function ambientStyleScript(): string {
       // 弹窗 slider like every other floating surface. Selector is unique:
       // no other element on the page carries the "_tab_" substring.
       '[class*="_tab_"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
+      // The corner icon pair at the tab strip's right end (_stripChrome_17p4l_
+      // = 全屏 + 收起右侧边栏, unique on the page) sits flush against the
+      // window edge (用户: 右上角的侧边栏图标需要往左移动点, 可以把右上角
+      // 所有图标都往左移点) — a right margin slides the whole pair inward.
+      '[class*="_stripChrome_"] { margin-right: 25px !important; }',
+      // Collapsed-sidebar corner cluster (用户: 右上角的侧边栏图标需要往左
+      // 移动点, 所有图标都往左移点, 没效果呀 → 往左边太多了减小一半): with
+      // the right sidebar COLLAPSED the pane's stripChrome pair is parked
+      // off-window, and the visible corner icons are the header row's own —
+      // 文件管理器/选择打开方式/更多操作 in wSkVaW_headerUtilities
+      // (right-packed via a 1306px margin-left) plus 打开右侧边栏 in
+      // wSkVaW_headerCorner (negative -16px right margin overhangs the
+      // window edge). Translate both containers left instead of touching
+      // the official margin math.
+      '[class*="wSkVaW_headerUtilities"], [class*="wSkVaW_headerCorner"] { transform: translateX(-20px) !important; }',
       '[class*="_pane_"]::before { content: "" !important; position: absolute !important; inset: 0 !important; border-radius: inherit !important; pointer-events: none !important; z-index: -1 !important; backdrop-filter: var(--dsh-glass-column-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-column-filter) !important; }',
       // The vertical line on the pane's left edge (用户: 侧边栏左侧有条竖线
       // 我不要) was P3OORG_panel's own 1px border-left — killing it below is
