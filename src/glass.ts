@@ -848,6 +848,18 @@ export function ambientStyleScript(): string {
       // --dsw-mask-blur) have no fill or keep their official blur.
       '[class*=\"_float_\"], [class*=\"_onboardingStage_\"], [class*=\"_bubble_1nw3t\"], [class*=\"_toast_\"] { backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
       '[class*=\"_toast_\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; }',
+      // Question card (用户: 你看下这个项目那个弹窗中是有跳过本题和提交这两
+      // 个选项 → 视觉统一): the agent-asks-user QuestionComposer card from
+      // dsh-client-ui-user-questions (跳过本题 + 下一题/提交 footer, one
+      // question at a time; plan-approval variant shares the card). Its root
+      // paints --dsw-specific-input-major, which the surface maps pin OPAQUE
+      // rgb(58,68,90) — and that alias is shared (composer input fill, image
+      // viewer), so it can't be rerouted globally. Target the card element
+      // directly: popup glass var + the 弹窗 slider's blur. Substring only
+      // matches _card and _cardMinimized (same element, minimized state);
+      // the card's own answer field (customBlock) already rides the popup
+      // var via bg-module-platform, so the whole card unifies on frost.
+      '[class*=\"Mbwy4a_card\"] { background-color: var(--dsh-glass-popup-bg, rgba(39,46,62,0.07)) !important; backdrop-filter: var(--dsh-glass-popup-filter) !important; -webkit-backdrop-filter: var(--dsh-glass-popup-filter) !important; }',
       // Model-picker provider title rows (DeepSeek / Ollama / 智谱 GLM /
       // FreeToken, _7KE1Ra_groupTitle): DSH paints them with an OPAQUE
       // rgb(39,46,62) band. They sit INSIDE the blurred menu, so a
