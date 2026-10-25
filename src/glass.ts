@@ -1161,6 +1161,14 @@ export function ambientStyleScript(): string {
       // 栏占用). Lift the overlay above all page UI, just under the cursor-FX
       // canvas (2147482999).
       '[class*="VOzbGW_overlay"] { z-index: 2147482000 !important; }',
+      // rc.3 regression: the plugin-market install confirm modal portals to a
+      // body-level wrapper (_root_o6lrb_ family, upstream z 1000) that relies
+      // on same-z later-DOM order to paint above the settings overlay. Our
+      // 2147482000 lift buried it under the settings page, so the confirm
+      // dialog was unpaintable. Lift the wrapper above the overlay; role=dialog
+      // is the stable handle, the class hash is the rc.3 shape. Stays under
+      // the cursor-FX canvas (2147482999).
+      'body > [class*="_root_"]:has(> [role="dialog"]) { z-index: 2147482100 !important; }',
       // The center column's blur rides a ::before pseudo-element (same
       // pattern as the sidebar), NOT the column itself: a backdrop-filter on
       // the element forces the compositor to re-sample everything below it

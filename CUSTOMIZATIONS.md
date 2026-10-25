@@ -31,7 +31,8 @@
 | fV0t5q_ / _1p9O6q_ / lc-stat / lc-settings-card | 轨迹/上下文面板 |
 | rtSEdW_ / eGUBIq_ / qSYn7G_ / YyYd_a_ | 设置卡片/tooltip |
 | _7KE1Ra_ | 模型选择菜单 |
-| VOzbGW_ | 设置弹窗 overlay（:has 穿透修复） |
+| VOzbGW_ | 设置弹窗 overlay（:has 穿透修复；z 抬至 2147482000 压右侧面板） |
+| nUhMVa_ / _o6lrb_ / pI_x6G_ | rc.3 新增：插件市场安装确认弹窗（nUhMVa_confirmModal，body 级 portal wrapper 上游 z:1000 靠同 z 后者胜压 overlay，被壳的 overlay 抬升压死后在 glass.ts 反抬 2147482100）与市场遮罩层 |
 | P3OORG_panel | 右侧面板壳 |
 | __DSH_BOOT__ / "dsh web authentication required" | 实例探活标记（launcher.ts） |
 
