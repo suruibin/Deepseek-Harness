@@ -2,9 +2,9 @@
 
 > 基座：上游 dsh-desktop-electron 初始 5 提交（e67ac22…81a3eed）。
 > 本 fork：95 个提交，54 个文件改动，+15046 行。上游基座本身很小，
-> 绝大部分代码是 fork 新增；「更新同步」主要是两层：
-> ① 上游壳（Electron 工程）出新版时 rebase；
-> ② dsh web 本体（npm 包，独立演进）升级时回归测试注入脚本。
+> 绝大部分代码是 fork 新增；本 fork 是自有产品线（无可 rebase 的上游，
+> 详见「八、上游拓扑」），「更新同步」= dsh web 本体（npm 包，独立演进）
+> 升级时对注入脚本做回归测试。
 
 ## 一、毛玻璃视觉体系 —— src/glass.ts（新增，1946 行）
 
@@ -78,12 +78,28 @@
 launcher（401 签名/token 解析）、git-status、pty-registry、session-repair、wallpaper、plugins。
 上游更新后必跑：`npm run typecheck && npm test`，再 CDP E2E 核对类名。
 
-## 八、更新同步操作顺序
+## 八、上游拓扑（2026-10-25 实测勘正）
 
-1. git fetch 上游壳新提交 → rebase（冲突集中在 main.ts/launcher.ts/package.json）
-2. 跑 tsc + 88 测试
+- 本 fork 无可 rebase 的上游壳：基座 5 提交（e67ac22…81a3eed）在已知候选上游中均无祖先——
+  anywhere-labs/dsh-desktop（monorepo，13809 提交）与 deepseek-ai/deepseek-harness（23934 提交，
+  即 dsh web 本体仓库，含 dsh-v0.2.1-rc.x 标签）中都不存在基座的 reaper.ts/process-tree.ts，
+  基座提交信息亦搜不到（fork 为重新导入，无共同祖先，merge-base 为空）
+- 上游桌面壳已彻底重写：deepseek-ai/deepseek-harness 的 apps/desktop/（72 文件，backend-controller/
+  host-process 等新架构，持续活跃）与本 fork 的 5 文件老架构（launcher/reaper/process-tree）是
+  两套代码。「同步壳」= 全量移植（数天级大工程），非 rebase
+- monorepo anywhere-labs/dsh-desktop 通过 .gitmodules submodule 钉 deepseek-ai/deepseek-harness
+  （1f81c04），是壳的孵化地/参考实现；其 .agents/notes/architecture/ 有桌面架构笔记
+- 本地已配 remote：origin=suruibin/Deepseek-Harness（自有产品线），
+  upstream=deepseek-ai/deepseek-harness（仅用于追踪 dsh web 版本与标签）
+
+**结论：壳是自有产品线，不跟上游合并。真正的「更新同步」= dsh web 本体升级后的注入回归** ↓
+
+## 九、更新同步操作顺序（dsh web 升级时执行）
+
+1. 手动升级 dsh 前先记当前版本（dsh-update.timer 保持禁用，上游自动升级曾引发事故）
+2. 升级后跑 tsc + 88 测试
 3. 启动后 CDP 核对「二」表中的类名，失效项更新选择器
-4. 检查 dsh web 认证模型是否变化（token 栅栏/签名串）
+4. 检查 dsh web 认证模型是否变化（token 栅栏/签名串，对应 upstream 仓库 dsh-v* 标签的改动）
 5. 回归视觉清单：三滑块实时生效、弹窗族毛玻璃、代码块复制行、问题卡片、图标位置
 6. 重打包 AppImage 部署 ~/Software/Deepseek.AppImage
-7. 禁用 dsh-update.timer 保持手动升级（上游自动升级曾引发事故）
+7. 如需参考上游壳的新能力，读 upstream 仓库 apps/desktop/ 对应实现，按需移植单点
