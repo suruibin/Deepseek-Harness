@@ -1161,14 +1161,32 @@ export function ambientStyleScript(): string {
       // 栏占用). Lift the overlay above all page UI, just under the cursor-FX
       // canvas (2147482999).
       '[class*="VOzbGW_overlay"] { z-index: 2147482000 !important; }',
-      // rc.3 regression: the plugin-market install confirm modal portals to a
-      // body-level wrapper (_root_o6lrb_ family, upstream z 1000) that relies
-      // on same-z later-DOM order to paint above the settings overlay. Our
-      // 2147482000 lift buried it under the settings page, so the confirm
-      // dialog was unpaintable. Lift the wrapper above the overlay; role=dialog
-      // is the stable handle, the class hash is the rc.3 shape. Stays under
-      // the cursor-FX canvas (2147482999).
+      // rc.3 regression: centered modals (plugin-market install confirm, the
+      // image viewer opened from a plugin's picture preview, and any future
+      // member of this family) portal to body-level wrappers of the
+      // _root_o6lrb_ module (upstream z 1000, full-screen fixed flex). They
+      // relied on same-z later-DOM order to paint above the settings overlay;
+      // our 2147482000 lift buried them under the settings page (用户: 安装界
+      // 面 / 图片预览显示在设置界面后). Lift the whole modal-portal layer above
+      // the overlay — siblings keep upstream stacking semantics (same z, DOM
+      // order decides). Stays under the cursor-FX canvas (2147482999). The
+      // :has fallback covers future wrapper hashes that host a role=dialog.
+      'body > [class*="_root_o6lrb_"] { z-index: 2147482100 !important; }',
       'body > [class*="_root_"]:has(> [role="dialog"]) { z-index: 2147482100 !important; }',
+      // The third-party dshmarket plugin portals its screenshot lightbox (and
+      // anything else it floats outside dialogs) into a persistent body-level
+      // host node marked data-dsh-market-portal. Its own CSS keeps the lightbox
+      // at z 10000 and relies on the host being re-appended as body's LAST
+      // child to paint above the host app's portalled dialogs (same-z DOM-order
+      // semantics). Our 2147482000 settings-overlay lift buried it — the user's
+      // plugin-preview images opened behind the settings dialog. The host is
+      // position:static, so a bare z-index rule is inert (computed style echoes
+      // the value but stacking ignores it — verified by probe); giving the host
+      // position:relative makes the lift real. As body's last positioned child
+      // it still paints above the dialog wrappers above it, under the cursor-FX
+      // canvas (2147482999). Fixed children keep viewport anchoring (relative
+      // ancestors don't re-anchor position:fixed; only transform/filter do).
+      'body > [data-dsh-market-portal] { position: relative !important; z-index: 2147482100 !important; }',
       // The center column's blur rides a ::before pseudo-element (same
       // pattern as the sidebar), NOT the column itself: a backdrop-filter on
       // the element forces the compositor to re-sample everything below it

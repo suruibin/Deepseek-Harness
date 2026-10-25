@@ -32,7 +32,8 @@
 | rtSEdW_ / eGUBIq_ / qSYn7G_ / YyYd_a_ | 设置卡片/tooltip |
 | _7KE1Ra_ | 模型选择菜单 |
 | VOzbGW_ | 设置弹窗 overlay（:has 穿透修复；z 抬至 2147482000 压右侧面板） |
-| nUhMVa_ / _o6lrb_ / pI_x6G_ | rc.3 新增：插件市场安装确认弹窗（nUhMVa_confirmModal，body 级 portal wrapper 上游 z:1000 靠同 z 后者胜压 overlay，被壳的 overlay 抬升压死后在 glass.ts 反抬 2147482100）与市场遮罩层 |
+| nUhMVa_ | 第三方插件 dshmarket 的 UI 模块（确认弹窗 confirmModal/lightbox 等）；confirm 弹窗走宿主 _root_o6lrb_ portal，lightbox 走自带 body 级 host（data-dsh-market-portal，靠 body 末位 DOM 顺序压宿主弹窗，被壳的 overlay 抬升压死后在 glass.ts 反抬 2147482100） |
+| data-dsh-market-portal | dshmarket 自建 body 级 portal host（lib/client.js marketPortalHost），壳反抬 z:2147482100 |
 | P3OORG_panel | 右侧面板壳 |
 | __DSH_BOOT__ / "dsh web authentication required" | 实例探活标记（launcher.ts） |
 
@@ -102,5 +103,74 @@ launcher（401 签名/token 解析）、git-status、pty-registry、session-repa
 3. 启动后 CDP 核对「二」表中的类名，失效项更新选择器
 4. 检查 dsh web 认证模型是否变化（token 栅栏/签名串，对应 upstream 仓库 dsh-v* 标签的改动）
 5. 回归视觉清单：三滑块实时生效、弹窗族毛玻璃、代码块复制行、问题卡片、图标位置
-6. 重打包 AppImage 部署 ~/Software/Deepseek.AppImage
-7. 如需参考上游壳的新能力，读 upstream 仓库 apps/desktop/ 对应实现，按需移植单点
+6. 回归浮层层级（见「十」）：设置内打开安装确认/图片预览/下拉均不被遮罩压住
+7. 重打包 AppImage 部署 ~/Software/Deepseek.AppImage
+8. 如需参考上游壳的新能力，读 upstream 仓库 apps/desktop/ 对应实现，按需移植单点
+
+## 十、弹层层级战争——rc.3 portal 反抬体系（2026-10-25 实战记录）
+
+**背景**：壳为压住右侧面板把设置 overlay（VOzbGW_overlay，body 直接子节点）抬到 z:2147482000。
+rc.3 起弹层走「body 级 portal + 高 z」路线，靠同 z/高 z 压过宿主，逐族被我们的 2000 压死。
+用户可见症状：**弹窗/浮层画在设置界面后面、点不到**。解法集中在 glass.ts（~L1163-1189），
+一律反抬到 **2147482100**（居 overlay 之上、光标特效画布 2147482999 之下）。
+
+### 层级地图（body 直接子节点，从低到高）
+
+| 层 | z | 说明 |
+|---|---|---|
+| 壁纸层 | -1 | 壳注入 |
+| #root 应用 | auto | dsh web 主体 |
+| VOzbGW_overlay（设置遮罩+面板） | 2147482000 | 壳的规则；VOzbGW_panel 内 z:1 |
+| `body > [class*="_root_o6lrb_"]` | 2147482100 | rc.3 模态 portal 模块（安装确认弹窗等，上游 z:1000 靠同 z 后者胜） |
+| `body > [class*="_root_"]:has(> [role="dialog"])` | 2147482100 | 兜底：上游将来换哈希但内容带 role=dialog |
+| `body > [data-dsh-market-portal]` | 2147482100 | dshmarket 插件浮层 host（见下） |
+| 光标特效 canvas | 2147482999 | 壳注入，最顶层 |
+
+### 已修案例（快速索引）
+
+1. **安装确认弹窗被压**（rc.3 回归，commit 296b32b）：上游把确认弹窗 portal 到
+   `_root_o6lrb_` wrapper（上游 z:1000，靠同 z DOM 后者胜压 overlay:1000），被 2000 压死
+   → 反抬 2100（`role=dialog` 语义句柄 + 哈希双规则）。
+2. **dshmarket 图片灯箱被压**（第三方插件 dshmarket v1.70.2）：lightbox(z:10000) portal 到
+   自建 body 级 host `data-dsh-market-portal`（`lib/client.js marketPortalHost()`，class notranslate），
+   插件**不设 z**，靠「host 永远重新 append 到 body 末位」的 DOM 顺序压宿主弹窗
+   （源码注释明说此设计）→ 被 2000 压死 → host 反抬 2100。
+   修复教训：第一版只写 `z-index` 无效，因为 **host 是 `position:static`——z-index 对 static
+   元素不参与层叠**（getComputedStyle 会回显值但实测无效，探测时差点被骗）。必须
+   `position: relative` + z 一起写；relative 不会改 `position:fixed` 子元素的视口锚定
+   （只有 transform/filter 会）。
+
+### 下次浮层被压的排查路径
+
+1. 复现：设置弹窗开着时触发目标浮层，`document.elementFromPoint(中心)` 看命中的是谁
+2. 定位挂载：从 dsh web 前端包（`@deepseek-ai/dsh-web-frontend/dist/assets/*.css` 找
+   `_root_` 哈希）或插件包（`~/.dsh/profiles/web/node_modules/<pkg>/client/client.js`
+   `grep createPortal`/`Host`）确认浮层 portal 到哪、自身 z 是多少
+3. 套反抬：body 级句柄 + `position:relative`（若宿主 static）+ z:2147482100，
+   语义句柄（role=dialog/data 属性）优先于哈希（哈希随上游变）
+4. A/B 验证：合成同构浮层，三点 elementFromPoint（中心/边角/上缘），
+   有规则全命中浮层、去规则命中设置内容 = 修复成立
+
+### 复现/验证脚本骨架（CDP，30 秒）
+
+```js
+// 1. 打开设置弹窗（账号菜单 → Settings）
+// 2. 合成与真实结构一致的浮层：
+const host = document.createElement('div')
+host.setAttribute('data-dsh-market-portal', '')          // 换成目标浮层的 body 级标识
+const lb = document.createElement('div')
+lb.className = 'nUhMVa_lightbox'                          // 换成目标浮层类名
+lb.style.cssText = 'z-index:10000;position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85)'
+const img = document.createElement('img')
+img.style.cssText = 'width:320px;height:200px;display:block;background:red'
+lb.appendChild(img); host.appendChild(lb); document.body.appendChild(host)
+// 3. 三点 elementFromPoint：图片中心 / 屏幕右上角(mask 区) / 图片上缘
+//    修复后三点都应命中浮层内元素；去掉 data 属性（规则失配）应复现命中设置内容
+```
+
+### dshmarket 插件操作笔记（dev 复现用）
+
+- 插件卡片点击 = 切换启用态（不是打开详情）；启用徽章「已停用」消失即已启用
+- 「插件列表/插件市场」页签只在 tool-plugin-manager 启用后出现（dsh-market 入口在右侧面板）
+- UI 内启用态被锁（profile patch 寻址），dev 复现要改
+  `~/.dsh/profiles/web/cordis.patch.yml` 按 preset-ptc.config.plugins[].id 合并 disabled:false
